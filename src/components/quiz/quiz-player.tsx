@@ -25,7 +25,6 @@ export function QuizPlayer({
   questions: ClientQuestion[];
   courseSlug: string;
 }) {
-  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [result, setResult] = useState<{
     score: number;
     total: number;
@@ -133,9 +132,6 @@ export function QuizPlayer({
                   value={option.id}
                   required
                   className="mt-1"
-                  onChange={() =>
-                    setAnswers((prev) => ({ ...prev, [question.id]: option.id }))
-                  }
                 />
                 <span className="text-sm leading-relaxed">{option.text}</span>
               </label>
