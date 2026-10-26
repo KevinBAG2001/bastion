@@ -6,8 +6,8 @@ Documentación técnica: [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md).
 
 ## Requisitos
 
-- **Node.js 22+**
-- **pnpm 10+** (`corepack enable` recomendado)
+- **Node.js 24 LTS (24.22.1)** — ver `.nvmrc` / `.node-version`
+- **pnpm 12.15.0** (`corepack enable && corepack prepare pnpm@12.15.0 --activate`)
 - **Docker Desktop** (PostgreSQL local) — funciona en Windows, macOS y Linux
 - Git
 
@@ -81,4 +81,8 @@ Documentación técnica: [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md).
 
 ## Licencia
 
-Proyecto educativo — consulta al mantenedor del repositorio.
+Copyright 2026 Kevin Austria Galvan.
+
+Este proyecto se distribuye bajo la [Licencia Apache 2.0](LICENSE). Consulta también el archivo [NOTICE](NOTICE).
+
+El software se ofrece **tal cual**, sin garantías de ningún tipo, ya sean expresas o implícitas, incluidas, entre otras, las garantías de comerciabilidad, idoneidad para un fin particular y no infracción. El uso del software es bajo tu propio riesgo.
