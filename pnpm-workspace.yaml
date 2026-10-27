@@ -1,0 +1,14 @@
+minimumReleaseAge: 4320
+ignoreScripts: true
+overrides:
+  "@auth/core": ">=0.41.3"
+  effect: ">=3.20.0"
+  deepmerge-ts: ">=8.0.0"
+allowBuilds:
+  "@prisma/client": true
+  "@prisma/engines": true
+  prisma: true
+  esbuild: true
+  sharp: true
+  "@parcel/watcher": true
+  workerd: true
