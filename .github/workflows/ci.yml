@@ -52,11 +52,17 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: 24.22.1
           cache: pnpm
 
       - name: Instalar dependencias
         run: pnpm install --frozen-lockfile
+
+      - name: Generar cliente Prisma
+        run: pnpm exec prisma generate
+
+      - name: Auditoría de dependencias (alta o crítica)
+        run: pnpm audit --audit-level high
 
       - name: Migraciones de base de datos
         run: pnpm db:migrate
@@ -105,11 +111,17 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: 24.22.1
           cache: pnpm
 
       - name: Instalar dependencias
         run: pnpm install --frozen-lockfile
+
+      - name: Generar cliente Prisma
+        run: pnpm exec prisma generate
+
+      - name: Auditoría de dependencias (alta o crítica)
+        run: pnpm audit --audit-level high
 
       - name: Migraciones y seed
         run: pnpm db:migrate && pnpm db:seed
@@ -124,7 +136,13 @@ jobs:
         run: BASTION_DISABLE_RATE_LIMIT=1 pnpm start &
 
       - name: Esperar servidor
-        run: npx --yes wait-on@8.0.1 http://127.0.0.1:3000 --timeout 120000
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:3000 >/dev/null && exit 0
+            sleep 2
+          done
+          echo "El servidor no respondió a tiempo"
+          exit 1
 
       - name: Ejecutar e2e
         run: pnpm test:e2e
