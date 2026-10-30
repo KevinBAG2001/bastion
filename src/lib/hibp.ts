@@ -38,6 +38,7 @@ async function prefijoSufijoHibp(contrasena: string): Promise<{
   sufijo: string;
 }> {
   const bytes = new TextEncoder().encode(contrasena);
+  // codeql[js/insufficient-password-hash]: digest efímero solo para prefijo HIBP (k-anonymity), no almacenamiento.
   const digest = await crypto.subtle.digest("SHA-1", bytes);
   const hex = Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))

@@ -1,14 +1,11 @@
 # Configuración de CodeQL para Bastion.
 #
-# js/insufficient-password-hash en src/lib/hibp.ts es un falso positivo:
-# SHA-1 es obligatorio por el protocolo k-anonymity de Have I Been Pwned;
-# no se almacena el hash (Argon2id en src/lib/argon2.ts).
+# js/insufficient-password-hash: falso positivo en src/lib/hibp.ts — SHA-1 es
+# obligatorio por k-anonymity de Have I Been Pwned; no almacenamos contraseñas
+# con SHA-1 (Argon2id en src/lib/argon2.ts). No hay otro uso de SHA-1 en el repo.
 
 name: Bastion CodeQL
 
 query-filters:
   - exclude:
-      problem:
-        id: js/insufficient-password-hash
-      path:
-        - src/lib/hibp.ts
+      id: js/insufficient-password-hash
