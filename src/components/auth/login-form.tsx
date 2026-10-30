@@ -7,9 +7,11 @@ import { Button } from "@/components/ui/button";
 export function LoginForm({
   callbackUrl,
   registered,
+  verified,
 }: {
   callbackUrl: string;
   registered?: boolean;
+  verified?: boolean;
 }) {
   const [state, action, pending] = useActionState(loginWithCredentials, undefined);
 
@@ -17,8 +19,13 @@ export function LoginForm({
     <form action={action} className="space-y-4">
       <input type="hidden" name="callbackUrl" value={callbackUrl} />
       {registered && (
+        <p className="rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-sm text-blue-200">
+          Cuenta creada. Revisa tu correo para verificar tu cuenta antes de iniciar sesión.
+        </p>
+      )}
+      {verified && (
         <p className="rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-green-200">
-          Cuenta creada. Inicia sesión para continuar.
+          Correo verificado correctamente. Ya puedes iniciar sesión.
         </p>
       )}
       {state?.error && (
