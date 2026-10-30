@@ -25,7 +25,7 @@ export function RegisterForm() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const data = (await res.json()) as { error?: string };
+    const data = (await res.json()) as { error?: string; message?: string };
     setLoading(false);
 
     if (!res.ok) {
@@ -33,11 +33,12 @@ export function RegisterForm() {
       return;
     }
 
+    // El registro exitoso devuelve un mensaje genérico pidiendo verificar el correo
     router.push("/iniciar-sesion?registrado=1");
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4" noValidate>
+    <form onSubmit={onSubmit} method="post" action="/api/auth/register" className="space-y-4" noValidate>
       {error && (
         <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200" role="alert">
           {error}
@@ -77,11 +78,11 @@ export function RegisterForm() {
           name="password"
           type="password"
           required
-          minLength={8}
+          minLength={10}
           autoComplete="new-password"
           className="w-full rounded-xl border border-card-border bg-background px-3 py-2.5 text-sm outline-none ring-accent focus:ring-2"
         />
-        <p className="mt-1 text-xs text-muted">Mínimo 8 caracteres, con letras y números.</p>
+        <p className="mt-1 text-xs text-muted">Mínimo 10 caracteres, con letras, números y un carácter especial.</p>
       </div>
       <Button type="submit" className="w-full" disabled={loading}>
         {loading ? "Creando cuenta…" : "Crear cuenta"}

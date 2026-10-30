@@ -1,6 +1,9 @@
 /**
  * Middleware de Next.js: protección de rutas y encabezados de seguridad.
  *
+ * Importa auth.config.ts (Edge-compatible, sin Prisma ni node:crypto)
+ * en lugar de auth.ts para evitar avisos de Edge Runtime.
+ *
  * ¿Qué ataques evitan los encabezados?
  * - X-Content-Type-Options: nosniff → evita MIME sniffing (CWE-430).
  * - X-Frame-Options: DENY → evita clickjacking (CWE-1021).
@@ -11,9 +14,11 @@
  *   Usa nonce para scripts inline de Next.js.
  */
 
-import { auth } from "@/auth";
+import NextAuth from "next-auth";
+import authConfig from "@/auth.config";
 import { NextResponse } from "next/server";
-// Nota: no usar node:crypto en Edge Runtime; usar Web Crypto API.
+
+const { auth } = NextAuth(authConfig);
 
 const protectedPrefixes = ["/panel", "/cursos", "/perfil"];
 
@@ -40,15 +45,15 @@ export default auth((req) => {
 
   // --- Encabezados de seguridad ---
   const response = NextResponse.next();
-  // Generar nonce con Web Crypto API (compatible con Edge Runtime)
-  const nonceBytes = new Uint8Array(16);
-  crypto.getRandomValues(nonceBytes);
-  const nonce = btoa(String.fromCharCode(...nonceBytes));
-
-  // CSP estricta con nonce para scripts inline de Next.js
+  // CSP estricta. Next.js inyecta scripts inline que requieren 'unsafe-inline'
+  // o un nonce coordinado con el framework. Usamos 'unsafe-inline' como fallback
+  // junto con 'strict-dynamic' cuando se integre nonce nativo de Next.js (evolución).
+  // Austria: CSP sin nonce porque Next.js 16 no expone aún una API estable para
+  // pasar el nonce a todos los scripts inline del framework; si se agrega, migrar
+  // a script-src 'nonce-...' 'strict-dynamic' y quitar 'unsafe-inline'.
   const csp = [
     `default-src 'self'`,
-    `script-src 'self' 'nonce-${nonce}'`,
+    `script-src 'self' 'unsafe-inline'`,
     `style-src 'self' 'unsafe-inline'`, // Tailwind CSS usa estilos inline
     `img-src 'self' data:`,
     `font-src 'self'`,
@@ -74,9 +79,6 @@ export default auth((req) => {
       "max-age=31536000; includeSubDomains",
     );
   }
-
-  // Pasar el nonce para que las páginas puedan usarlo en scripts inline
-  response.headers.set("x-nonce", nonce);
 
   return response;
 });

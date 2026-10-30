@@ -1,5 +1,7 @@
 /**
- * Configuración de Auth.js (next-auth v5) para Bastion.
+ * Configuración completa de Auth.js (next-auth v5) para Bastion.
+ * Este archivo solo se ejecuta en Node.js runtime (Route Handlers, Server Actions, páginas RSC).
+ * El middleware (Edge) usa auth.config.ts que no importa Prisma ni node:crypto.
  *
  * Cambios de seguridad respecto a la versión original:
  * - Hash Argon2id en lugar de bcryptjs (resistencia a GPU/ASIC, CWE-916).
@@ -13,13 +15,10 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
-// Importación dinámica para evitar cargar node:crypto en Edge Runtime del middleware.
-// authorize() solo se ejecuta en Node.js runtime, no en Edge.
-async function importarArgon2() {
-  return import("@/lib/argon2");
-}
+import { verificarContrasena } from "@/lib/argon2";
 import { loginSchema } from "@/lib/validations";
 import { prisma } from "@/lib/prisma";
+import authConfig from "@/auth.config";
 
 /**
  * Verifica una contraseña contra un hash, soportando bcryptjs (legado) y Argon2id.
@@ -28,7 +27,6 @@ import { prisma } from "@/lib/prisma";
  */
 async function verificarHash(contrasena: string, hash: string): Promise<boolean> {
   if (hash.startsWith("$argon2id$")) {
-    const { verificarContrasena } = await importarArgon2();
     return verificarContrasena(contrasena, hash);
   }
   // Hash legado bcryptjs
@@ -40,8 +38,6 @@ async function verificarHash(contrasena: string, hash: string): Promise<boolean>
  * cuando el usuario no existe (evita enumeración por timing, CWE-208).
  */
 async function consumirTiempoConstante(): Promise<void> {
-  // Hash dummy de Argon2id con los mismos parámetros para igualar el tiempo
-  const { verificarContrasena } = await importarArgon2();
   await verificarContrasena(
     "tiempo-constante-dummy",
     "$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
@@ -51,6 +47,7 @@ async function consumirTiempoConstante(): Promise<void> {
 }
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  ...authConfig,
   providers: [
     Credentials({
       name: "Credenciales",
@@ -87,8 +84,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         // Verificación de correo obligatoria
         if (!user.emailVerifiedAt) {
-          // Nota: Auth.js no permite devolver un error personalizado desde authorize;
-          // el flujo de UI debe indicar que se requiere verificación.
           return null;
         }
 
@@ -103,27 +98,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
-  session: {
-    strategy: "jwt",
-    maxAge: 60 * 60 * 24 * 14, // 14 días
-  },
-  cookies: {
-    sessionToken: {
-      name:
-        process.env.NODE_ENV === "production"
-          ? "__Secure-authjs.session-token"
-          : "authjs.session-token",
-      options: {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        secure: process.env.NODE_ENV === "production",
-      },
-    },
-  },
-  pages: {
-    signIn: "/iniciar-sesion",
-  },
   callbacks: {
     async jwt({ token, user, trigger }) {
       // Login inicial: guardar sessionVersion en el token para rotación
@@ -143,7 +117,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         if (fresh) {
           // Si sessionVersion cambió, invalidar la sesión (CWE-613)
           if (fresh.sessionVersion !== token.sessionVersion) {
-            // Devolver un token vacío fuerza cierre de sesión
             return { ...token, sub: undefined };
           }
           token.xp = fresh.xp;
@@ -162,5 +135,4 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return session;
     },
   },
-  trustHost: true,
 });

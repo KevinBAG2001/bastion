@@ -14,6 +14,13 @@
  * La contraseña nunca sale del servidor; HIBP solo ve un prefijo de 5 chars
  * del SHA-1, lo que no permite reconstruir la contraseña ni el hash completo.
  *
+ * NOTA IMPORTANTE SOBRE SHA-1:
+ * SHA-1 es OBLIGATORIO aquí porque la API de HIBP (https://haveibeenpwned.com/API/v3)
+ * exige un prefijo SHA-1 como protocolo de consulta k-anonymity. NO se usa SHA-1
+ * para almacenar contraseñas (para eso usamos Argon2id en src/lib/argon2.ts).
+ * El SHA-1 es efímero: se calcula, se extrae el prefijo, se descarta.
+ * No se guarda el hash SHA-1 completo en ningún lugar.
+ *
  * Tolerante a fallos de red: si la API no responde, se permite el registro
  * con una advertencia en la bitácora.
  */
@@ -34,6 +41,7 @@ export async function verificarContrasenFiltrada(contrasena: string): Promise<{
   error: boolean;
 }> {
   try {
+    // codeql[js/insufficient-password-hash] — SHA-1 es obligatorio por el protocolo k-anonymity de HIBP; NO se usa para almacenar contraseñas (ver Argon2id en argon2.ts).
     const sha1 = createHash("sha1").update(contrasena).digest("hex").toUpperCase();
     const prefijo = sha1.slice(0, 5);
     const sufijo = sha1.slice(5);
