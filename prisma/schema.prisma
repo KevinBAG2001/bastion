@@ -14,19 +14,27 @@ enum Difficulty {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String
-  passwordHash String
-  xp           Int      @default(0)
-  level        Int      @default(1)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String    @id @default(cuid())
+  email             String    @unique
+  name              String
+  passwordHash      String
+  xp                Int       @default(0)
+  level             Int       @default(1)
+  emailVerifiedAt   DateTime?
+  passwordChangedAt DateTime?
+  /// Incrementar para invalidar todas las sesiones JWT del usuario.
+  /// Evita ataques de persistencia de sesión (CWE-613).
+  sessionVersion    Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  enrollments    Enrollment[]
-  lessonProgress LessonProgress[]
-  quizAttempts   QuizAttempt[]
-  achievements   UserAchievement[]
+  enrollments        Enrollment[]
+  lessonProgress     LessonProgress[]
+  quizAttempts       QuizAttempt[]
+  achievements       UserAchievement[]
+  tokensVerificacion TokenVerificacion[]
+  intentosLogin      IntentoLogin[]
+  eventosSeguridad   EventoSeguridad[]
 }
 
 model Course {
@@ -126,6 +134,64 @@ model QuizAttempt {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+}
+
+/// Tipo de token de verificación: correo electrónico o recuperación de contraseña.
+enum TipoToken {
+  VERIFICACION_CORREO
+  RECUPERACION_CONTRASENA
+}
+
+/// Tokens de un solo uso para verificación de correo y recuperación de contraseña.
+/// Se guardan con hash SHA-256 para que un volcado de BD no permita usarlos (CWE-257).
+model TokenVerificacion {
+  id        String    @id @default(cuid())
+  userId    String
+  tipo      TipoToken
+  /// Hash SHA-256 del token; el valor plano solo se envía al usuario una vez.
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@index([userId, tipo])
+}
+
+/// Registro de intentos de inicio de sesión por IP y por identificador (correo normalizado).
+/// Permite bloqueo temporal progresivo sin Redis (CWE-307: fuerza bruta).
+model IntentoLogin {
+  id        String   @id @default(cuid())
+  /// Llave: "ip:<dirección>" o "cuenta:<correo>"
+  llave     String
+  exito     Boolean
+  createdAt DateTime @default(now())
+
+  /// Relación opcional: si el correo existe, se liga al usuario.
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([llave, createdAt])
+}
+
+/// Bitácora de eventos de seguridad sin datos sensibles.
+/// Para auditoría forense y detección de anomalías (CWE-778: registro insuficiente).
+model EventoSeguridad {
+  id        String   @id @default(cuid())
+  userId    String?
+  accion    String
+  modulo    String
+  resultado String
+  ip        String?
+  detalle   String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([accion, createdAt])
 }
 
 model Achievement {
