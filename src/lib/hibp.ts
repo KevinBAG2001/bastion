@@ -25,10 +25,26 @@
  * con una advertencia en la bitácora.
  */
 
-import { createHash } from "node:crypto";
-
 const HIBP_API = "https://api.pwnedpasswords.com/range/";
 const TIMEOUT_MS = 3_000;
+
+/**
+ * Prefijo y sufijo SHA-1 en hex (protocolo k-anonymity de HIBP).
+ * Usamos Web Crypto (crypto.subtle) en lugar de node:crypto.createHash para
+ * consultar la API; el digest no se persiste (ver nota sobre SHA-1 arriba).
+ */
+async function prefijoSufijoHibp(contrasena: string): Promise<{
+  prefijo: string;
+  sufijo: string;
+}> {
+  const bytes = new TextEncoder().encode(contrasena);
+  const digest = await crypto.subtle.digest("SHA-1", bytes);
+  const hex = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
+  return { prefijo: hex.slice(0, 5), sufijo: hex.slice(5) };
+}
 
 /**
  * Verifica si una contraseña aparece en filtraciones conocidas.
@@ -41,10 +57,7 @@ export async function verificarContrasenFiltrada(contrasena: string): Promise<{
   error: boolean;
 }> {
   try {
-    // codeql[js/insufficient-password-hash] — SHA-1 es obligatorio por el protocolo k-anonymity de HIBP; NO se usa para almacenar contraseñas (ver Argon2id en argon2.ts).
-    const sha1 = createHash("sha1").update(contrasena).digest("hex").toUpperCase();
-    const prefijo = sha1.slice(0, 5);
-    const sufijo = sha1.slice(5);
+    const { prefijo, sufijo } = await prefijoSufijoHibp(contrasena);
 
     const respuesta = await fetch(`${HIBP_API}${prefijo}`, {
       headers: {
