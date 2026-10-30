@@ -4,7 +4,7 @@ services:
     container_name: bastion-postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "5436:5432"
     environment:
       POSTGRES_USER: bastion
       POSTGRES_PASSWORD: bastion_dev
