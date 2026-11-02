@@ -133,7 +133,7 @@ jobs:
         run: pnpm exec playwright install chromium --with-deps
 
       - name: Iniciar servidor
-        run: BASTION_DISABLE_RATE_LIMIT=1 pnpm start &
+        run: BASTION_DISABLE_RATE_LIMIT=1 BASTION_E2E=1 pnpm start &
 
       - name: Esperar servidor
         run: |

@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ callbackUrl?: string; registrado?: string }>;
+  searchParams: Promise<{ callbackUrl?: string; registrado?: string; verificado?: string }>;
 }) {
   const params = await searchParams;
   const callbackUrl = params.callbackUrl ?? "/panel";
@@ -19,7 +19,11 @@ export default async function LoginPage({
       <h1 className="text-2xl font-semibold">Bienvenido de nuevo</h1>
       <p className="mt-2 text-sm text-muted">Ingresa a tu panel de aprendizaje en Bastion.</p>
       <div className="mt-8 rounded-2xl border border-card-border bg-card/60 p-6">
-        <LoginForm callbackUrl={callbackUrl} registered={params.registrado === "1"} />
+        <LoginForm
+          callbackUrl={callbackUrl}
+          registered={params.registrado === "1"}
+          verified={params.verificado === "true"}
+        />
       </div>
       <p className="mt-6 text-center text-sm text-muted">
         ¿No tienes cuenta?{" "}
