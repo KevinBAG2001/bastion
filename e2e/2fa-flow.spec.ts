@@ -38,9 +38,7 @@ test.describe("Verificación en dos pasos (TOTP)", () => {
     await expect(page.getByText("Estado: activa")).toBeVisible();
     await expect(page.getByText("Códigos de respaldo (guárdalos ahora)")).toBeVisible();
 
-    await page.goto("/panel");
-    await page.getByRole("button", { name: "Salir" }).click();
-    await expect(page).toHaveURL("/");
+    await page.context().clearCookies();
     await page.goto("/iniciar-sesion");
     await page.getByLabel("Correo electrónico").fill(email);
     await page.getByLabel("Contraseña").fill(password);
