@@ -1,13 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
 export function SeguridadCuenta({
   emailVerifiedAtIso,
+  totpActivo,
 }: {
   emailVerifiedAtIso: string | null;
+  totpActivo: boolean;
 }) {
   const emailVerifiedAt = emailVerifiedAtIso ? new Date(emailVerifiedAtIso) : null;
   const [message, setMessage] = useState<string | null>(null);
@@ -36,7 +39,8 @@ export function SeguridadCuenta({
     <section className="mt-10 rounded-2xl border border-card-border bg-card/60 p-6">
       <h2 className="text-xl font-semibold">Seguridad de la cuenta</h2>
       <p className="mt-2 text-sm text-muted">
-        Gestiona la verificación de tu correo y las sesiones activas en otros dispositivos.
+        Gestiona la verificación de tu correo, la verificación en dos pasos y las sesiones
+        activas en otros dispositivos.
       </p>
 
       <dl className="mt-4 space-y-2 text-sm">
@@ -48,7 +52,20 @@ export function SeguridadCuenta({
               : "Pendiente — revisa tu bandeja de entrada"}
           </dd>
         </div>
+        <div className="flex justify-between gap-4 rounded-lg bg-card/40 px-4 py-2">
+          <dt className="text-muted">Verificación en dos pasos</dt>
+          <dd className={totpActivo ? "text-success" : "text-muted"}>
+            {totpActivo ? "Activa" : "Desactivada"}
+          </dd>
+        </div>
       </dl>
+
+      <Link
+        href="/perfil/seguridad"
+        className="mt-4 inline-flex rounded-xl border border-card-border bg-card/40 px-4 py-2.5 text-sm font-medium hover:border-accent/50"
+      >
+        Configurar verificación en dos pasos (TOTP) →
+      </Link>
 
       {error && (
         <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200" role="alert">

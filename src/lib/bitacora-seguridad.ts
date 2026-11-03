@@ -23,7 +23,14 @@ export type AccionSeguridad =
   | "restablecimiento_contrasena"
   | "cambio_contrasena"
   | "cierre_todas_sesiones"
-  | "csrf_rechazado";
+  | "csrf_rechazado"
+  | "totp_activado"
+  | "totp_desactivado"
+  | "totp_codigos_respaldo_regenerados"
+  | "totp_codigo_respaldo_usado"
+  | "login_2fa_pendiente"
+  | "login_2fa_exitoso"
+  | "login_2fa_fallido";
 
 export interface DatosBitacora {
   userId?: string;

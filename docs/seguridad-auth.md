@@ -15,6 +15,7 @@
 8. [Encabezados de seguridad y CSP](#8-encabezados-de-seguridad-y-csp)
 9. [Bitácora de eventos de seguridad](#9-bitácora-de-eventos-de-seguridad)
 10. [Mensajes genéricos y tiempo constante](#10-mensajes-genéricos-y-tiempo-constante)
+11. [Verificación en dos pasos (TOTP)](#11-verificación-en-dos-pasos-totp)
 
 ---
 
@@ -240,6 +241,34 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 
 ---
 
+## 11. Verificación en dos pasos (TOTP)
+
+**Archivos:** `src/lib/totp-2fa.ts`, `src/lib/cifrado-secreto.ts`, `src/lib/codigos-respaldo-2fa.ts`, `src/lib/verificar-segundo-factor.ts`, `src/actions/auth.ts`, `src/app/api/auth/2fa/*`
+
+**¿Qué es?** TOTP (Time-based One-Time Password, RFC 6238) añade un segundo factor opcional: un código de 6 dígitos que cambia cada 30 segundos en una app autenticadora (Aegis, Google Authenticator, etc.). Bastion también emite **10 códigos de respaldo** de un solo uso por si pierdes el teléfono.
+
+**¿Qué ataque evita?**
+- **Robo de contraseña sin segundo factor (CWE-308):** Aunque filtren tu contraseña, el atacante necesita el dispositivo o un código de respaldo.
+- **Secreto TOTP en volcado de BD (CWE-311):** El secreto se guarda cifrado con **AES-256-GCM** y la clave maestra `TOTP_ENCRYPTION_KEY` (solo en el servidor).
+- **Reutilización de códigos TOTP:** Se registra el último paso de tiempo usado para no aceptar el mismo código dos veces en la misma ventana.
+- **Sesiones persistentes tras eventos críticos (CWE-613):** Al activar, desactivar o usar un código de respaldo se incrementa `sessionVersion`.
+
+**Activación (sin servicios externos):**
+1. El servidor genera un secreto aleatorio y lo cifra como *pendiente*.
+2. Se muestra un **QR generado en local** (`qrcode`) y la clave manual.
+3. Solo tras confirmar un código TOTP válido se activa 2FA y se muestran los códigos de respaldo (una sola vez).
+
+**Login en dos fases:**
+1. Tras contraseña correcta, **no** se crea sesión JWT completa: se emite un token `LOGIN_PENDIENTE_2FA` (5 minutos, hash en BD).
+2. El usuario ingresa TOTP o código de respaldo; entonces Auth.js emite la cookie de sesión.
+3. El límite de intentos de PostgreSQL aplica también a la llave `2fa:cuenta:<correo>`.
+
+**Desactivación:** Requiere contraseña **y** código TOTP (no se aceptan códigos de respaldo para desactivar, para evitar que quien robe un respaldo desactive tu 2FA).
+
+**Clave de cifrado:** Genera `TOTP_ENCRYPTION_KEY` con `openssl rand -base64 32` (32 bytes aleatorios). Documentada en `.env.example`; nunca la subas al repositorio.
+
+---
+
 ## Diagrama de flujo de autenticación
 
 ```
@@ -250,9 +279,16 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
                                                         │
                                                         ▼
 ┌─────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
-│  Login  │────▶│ Rate     │────▶│ Argon2id │────▶│  JWT +   │
-│         │     │ Limit DB │     │ verify   │     │  Cookie  │
-└─────────┘     └──────────┘     └──────────┘     └──────────┘
+│  Login  │────▶│ Rate     │────▶│ Argon2id │────▶│ ¿2FA?    │
+│         │     │ Limit DB │     │ verify   │     │ TOTP     │
+└─────────┘     └──────────┘     └──────────┘     └────┬─────┘
+                                                        │
+                        ┌───────────────────────────────┘
+                        ▼
+                 ┌──────────┐     ┌──────────┐
+                 │ Token    │────▶│  JWT +   │
+                 │ pendiente│     │  Cookie  │
+                 └──────────┘     └──────────┘
                                                         │
                                                         ▼
 ┌─────────┐     ┌──────────┐                     ┌──────────┐
@@ -297,16 +333,20 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 | `src/app/api/auth/cerrar-todas-sesiones/route.ts` | Cerrar todas las sesiones |
 | `src/app/recuperar-contrasena/page.tsx` | UI para solicitar enlace de recuperación |
 | `src/app/restablecer-contrasena/page.tsx` | UI para nueva contraseña con token |
-| `src/app/perfil/page.tsx` | Sección de seguridad (verificación, cerrar sesiones) |
-| `prisma/schema.prisma` | Modelos de BD (TokenVerificacion, IntentoLogin, EventoSeguridad) |
+| `src/app/perfil/page.tsx` | Perfil con sección de seguridad de cuenta |
+| `src/app/perfil/seguridad/page.tsx` | Activación y gestión de 2FA (TOTP) |
+| `src/lib/totp-2fa.ts` | TOTP RFC 6238 y QR local |
+| `src/lib/cifrado-secreto.ts` | AES-GCM para secretos en reposo |
+| `src/lib/codigos-respaldo-2fa.ts` | Códigos de respaldo hasheados |
+| `src/app/api/auth/2fa/*` | Activación, desactivación y respaldo |
+| `prisma/schema.prisma` | Modelos de BD (TokenVerificacion, IntentoLogin, EventoSeguridad, CodigoRespaldo2FA) |
 
 ---
 
 ## Riesgos pendientes (fuera de este PR)
 
-1. **2FA (segundo factor):** Irá en otro PR.
-2. **Adaptador de correo real:** Hoy se imprime en consola; en producción usar Resend/SES.
-3. **Rate limiting distribuido:** Si se escala a múltiples instancias, migrar a Redis/Upstash.
-4. **Limpieza de intentos antiguos:** Implementar cron para `limpiarIntentosAntiguos()`.
-5. **CAPTCHA:** No implementado; agregar como evolución con alternativa accesible.
-6. **Migración progresiva de bcrypt a Argon2id:** Los hashes legados se re-hashean al login.
+1. **Adaptador de correo real:** Hoy se imprime en consola; en producción usar Resend/SES.
+2. **Rate limiting distribuido:** Si se escala a múltiples instancias, migrar a Redis/Upstash.
+3. **Limpieza de intentos antiguos:** Implementar cron para `limpiarIntentosAntiguos()`.
+4. **CAPTCHA:** No implementado; agregar como evolución con alternativa accesible.
+5. **Migración progresiva de bcrypt a Argon2id:** Los hashes legados se re-hashean al login.

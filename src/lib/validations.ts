@@ -42,6 +42,27 @@ export const restablecerContrasenaSchema = z.object({
     .regex(/[^A-Za-z0-9]/, "Incluye al menos un carácter especial."),
 });
 
+/** Código TOTP (6 dígitos) o respaldo (xxxx-xxxx). */
+export const codigo2FASchema = z.object({
+  codigo: z
+    .string()
+    .trim()
+    .min(6, "Ingresa el código de verificación.")
+    .max(16),
+});
+
+export const desactivar2FASchema = z.object({
+  password: z.string().min(1, "Ingresa tu contraseña."),
+  codigo: z.string().trim().min(6).max(16),
+});
+
+export const confirmarActivacion2FASchema = z.object({
+  codigo: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/, "El código TOTP debe tener 6 dígitos."),
+});
+
 export const quizSubmitSchema = z.object({
   quizId: z.string().cuid(),
   answers: z.record(z.string().cuid(), z.string().cuid()),

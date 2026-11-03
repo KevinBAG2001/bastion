@@ -18,6 +18,7 @@ import { compare } from "bcryptjs";
 import { verificarContrasena } from "@/lib/argon2";
 import { loginSchema } from "@/lib/validations";
 import { prisma } from "@/lib/prisma";
+import { completarLoginSegundoFactor } from "@/lib/login-segundo-factor";
 import authConfig from "@/auth.config";
 
 /**
@@ -70,6 +71,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             level: true,
             emailVerifiedAt: true,
             sessionVersion: true,
+            totpEnabledAt: true,
           },
         });
 
@@ -87,6 +89,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return null;
         }
 
+        // Con 2FA activo el login completo exige la segunda fase (token pendiente + código)
+        if (user.totpEnabledAt) {
+          return null;
+        }
+
         return {
           id: user.id,
           email: user.email,
@@ -95,6 +102,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           level: user.level,
           sessionVersion: user.sessionVersion,
         };
+      },
+    }),
+    Credentials({
+      id: "credentials-2fa",
+      name: "Segundo factor",
+      credentials: {
+        mfaPendingToken: { label: "Token 2FA pendiente", type: "text" },
+        mfaCode: { label: "Código 2FA", type: "text" },
+      },
+      async authorize(credentials) {
+        const mfaToken = String(credentials?.mfaPendingToken ?? "");
+        const mfaCode = String(credentials?.mfaCode ?? "");
+        if (!mfaToken || !mfaCode) return null;
+        return completarLoginSegundoFactor(mfaToken, mfaCode);
       },
     }),
   ],

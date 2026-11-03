@@ -54,6 +54,7 @@ export default async function ProfilePage() {
 
       <SeguridadCuenta
         emailVerifiedAtIso={user.emailVerifiedAt?.toISOString() ?? null}
+        totpActivo={user.totpEnabledAt !== null}
       />
 
       <section className="mt-10">
