@@ -12,7 +12,7 @@
 
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { AuthError } from "next-auth";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { signIn } from "@/auth";
@@ -22,6 +22,7 @@ import { registrarEvento, redactarCorreo } from "@/lib/bitacora-seguridad";
 import { verificarCredenciales } from "@/lib/verificar-credenciales";
 import { generarToken, validarTokenSinConsumir } from "@/lib/tokens";
 import { prisma } from "@/lib/prisma";
+import { ipClienteDesdeEncabezados } from "@/lib/ip-cliente";
 
 const COOKIE_LOGIN_PENDIENTE = "bastion_login_pendiente_2fa";
 const MAX_AGE_PENDIENTE_SEG = 5 * 60;
@@ -35,7 +36,21 @@ export async function loginWithCredentials(
   formData: FormData,
 ): Promise<EstadoLogin> {
   const email = String(formData.get("email") ?? "").toLowerCase();
-  const ip = "server-action";
+  const ip = ipClienteDesdeEncabezados(await headers());
+
+  const limiteIp = await verificarLimite(`ip:${ip}`);
+  if (!limiteIp.permitido) {
+    await registrarEvento({
+      accion: "login_bloqueado",
+      modulo: "login",
+      resultado: "bloqueado",
+      ip,
+      detalle: `IP bloqueada, ${limiteIp.intentosFallidos} intentos`,
+    });
+    return {
+      error: "Demasiados intentos de inicio de sesión. Intenta más tarde.",
+    };
+  }
 
   const limiteCuenta = await verificarLimite(`cuenta:${email}`);
   if (!limiteCuenta.permitido) {
@@ -66,6 +81,7 @@ export async function loginWithCredentials(
 
   if (!usuario) {
     await registrarIntento(`cuenta:${email}`, false);
+    await registrarIntento(`ip:${ip}`, false);
     await registrarEvento({
       accion: "login_fallido",
       modulo: "login",
@@ -109,6 +125,7 @@ export async function loginWithCredentials(
   } catch (error) {
     if (isRedirectError(error)) {
       await registrarIntento(`cuenta:${email}`, true, usuario.id);
+      await registrarIntento(`ip:${ip}`, true, usuario.id);
       await registrarEvento({
         userId: usuario.id,
         accion: "login_exitoso",
@@ -121,6 +138,7 @@ export async function loginWithCredentials(
     }
     if (error instanceof AuthError) {
       await registrarIntento(`cuenta:${email}`, false);
+      await registrarIntento(`ip:${ip}`, false);
       await registrarEvento({
         accion: "login_fallido",
         modulo: "login",
@@ -142,7 +160,7 @@ export async function loginWithSecondFactor(
 ): Promise<{ error?: string }> {
   const jar = await cookies();
   const pendingToken = jar.get(COOKIE_LOGIN_PENDIENTE)?.value ?? "";
-  const ip = "server-action";
+  const ip = ipClienteDesdeEncabezados(await headers());
 
   if (!pendingToken) {
     return { error: "Sesión de verificación expirada. Vuelve a iniciar sesión." };
@@ -152,6 +170,21 @@ export async function loginWithSecondFactor(
   if (!userId) {
     jar.delete(COOKIE_LOGIN_PENDIENTE);
     return { error: "Sesión de verificación expirada. Vuelve a iniciar sesión." };
+  }
+
+  const limiteIp2fa = await verificarLimite(`2fa:ip:${ip}`);
+  if (!limiteIp2fa.permitido) {
+    await registrarEvento({
+      userId,
+      accion: "login_bloqueado",
+      modulo: "login_2fa",
+      resultado: "bloqueado",
+      ip,
+      detalle: "2FA bloqueado por IP",
+    });
+    return {
+      error: "Demasiados intentos de verificación. Intenta más tarde.",
+    };
   }
 
   const limite2fa = await verificarLimite(`2fa:cuenta:${userId}`);
@@ -191,7 +224,9 @@ export async function loginWithSecondFactor(
       });
       if (user) {
         await registrarIntento(`2fa:cuenta:${userId}`, true, userId);
+        await registrarIntento(`2fa:ip:${ip}`, true, userId);
         await registrarIntento(`cuenta:${user.email}`, true, userId);
+        await registrarIntento(`ip:${ip}`, true, userId);
         await registrarEvento({
           userId,
           accion: "login_2fa_exitoso",
@@ -212,6 +247,7 @@ export async function loginWithSecondFactor(
     }
     if (error instanceof AuthError) {
       await registrarIntento(`2fa:cuenta:${userId}`, false, userId);
+      await registrarIntento(`2fa:ip:${ip}`, false, userId);
       const user = await prisma.user.findUnique({
         where: { id: userId },
         select: { email: true },

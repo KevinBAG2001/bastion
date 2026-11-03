@@ -4,10 +4,13 @@
  * ¿Qué ataque evita?
  * - Enumeración de correos (CWE-203): siempre responde el mismo mensaje,
  *   exista o no el correo, con tiempo de respuesta constante.
+ * - Enumeración por tiempos (CWE-208): trabajo equivalente cuando no hay cuenta
+ *   (hash Argon2id en paralelo al camino con token) y piso de latencia mínimo.
  * - CSRF (CWE-352): verificación de Origin.
  * - Fuerza bruta de solicitudes (CWE-307): límite por IP.
  */
 
+import { randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { recuperarContrasenaSchema } from "@/lib/validations";
@@ -16,18 +19,25 @@ import { generarToken } from "@/lib/tokens";
 import { enviarCorreoRecuperacion } from "@/lib/correo";
 import { verificarOrigenCSRF } from "@/lib/csrf";
 import { registrarEvento, redactarCorreo } from "@/lib/bitacora-seguridad";
+import { ipClienteDesdeRequest } from "@/lib/ip-cliente";
+import { hashContrasena } from "@/lib/argon2";
+import { asegurarTiempoMinimo } from "@/lib/tiempo-respuesta-constante";
 
 /** Mensaje genérico idéntico para todos los casos (no revela si el correo existe). */
 const MENSAJE_GENERICO =
   "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña.";
 
+/** Piso de latencia (ms) para dificultar medición fina entre caminos. */
+const TIEMPO_MINIMO_RESPUESTA_MS = 80;
+
 export async function POST(request: Request) {
+  const inicioMs = Date.now();
+
   if (!verificarOrigenCSRF(request)) {
     return NextResponse.json({ error: "Solicitud no autorizada." }, { status: 403 });
   }
 
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = ipClienteDesdeRequest(request);
 
   const limite = await verificarLimite(`ip:${ip}`);
   if (!limite.permitido) {
@@ -56,6 +66,12 @@ export async function POST(request: Request) {
   }
 
   const email = parsed.data.email.toLowerCase();
+
+  // Costo CPU similar en ambos caminos: Argon2id dummy mientras se resuelve la cuenta.
+  const trabajoConstante = hashContrasena(
+    randomBytes(32).toString("hex"),
+  );
+
   const user = await prisma.user.findUnique({
     where: { email },
     select: { id: true },
@@ -74,7 +90,10 @@ export async function POST(request: Request) {
     });
   }
 
+  await trabajoConstante;
+
   await registrarIntento(`ip:${ip}`, true);
+  await asegurarTiempoMinimo(inicioMs, TIEMPO_MINIMO_RESPUESTA_MS);
 
   // Siempre el mismo mensaje y código, exista o no el correo
   return NextResponse.json({ message: MENSAJE_GENERICO }, { status: 200 });
