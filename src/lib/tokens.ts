@@ -6,6 +6,7 @@
  *   Se guarda solo el hash SHA-256 del token; el valor plano se envía una vez.
  * - Reutilización de tokens (CWE-613): cada token tiene caducidad corta y uso único.
  * - Adivinación de tokens (CWE-330): se usan 32 bytes criptográficos aleatorios.
+ * - Condiciones de carrera (A5): el consumo usa updateMany condicional dentro de transacciones.
  */
 
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
@@ -61,6 +62,50 @@ export async function generarToken(
 }
 
 /**
+ * Consume un token de forma atómica (usedAt IS NULL). Devuelve userId o null.
+ * Lección A5: dos solicitudes paralelas no pueden consumir el mismo token.
+ */
+export async function consumirTokenAtomico(
+  tokenPlano: string,
+  tipo: TipoToken,
+): Promise<string | null> {
+  const tokenHashValue = hashToken(tokenPlano);
+  const ahora = new Date();
+
+  return prisma.$transaction(async (tx) => {
+    const registro = await tx.tokenVerificacion.findFirst({
+      where: {
+        tokenHash: tokenHashValue,
+        tipo,
+        usedAt: null,
+        expiresAt: { gt: ahora },
+      },
+    });
+
+    if (!registro) {
+      return null;
+    }
+
+    const hashBuffer = Buffer.from(registro.tokenHash, "hex");
+    const inputBuffer = Buffer.from(tokenHashValue, "hex");
+    if (!timingSafeEqual(hashBuffer, inputBuffer)) {
+      return null;
+    }
+
+    const marcado = await tx.tokenVerificacion.updateMany({
+      where: { id: registro.id, usedAt: null },
+      data: { usedAt: ahora },
+    });
+
+    if (marcado.count !== 1) {
+      return null;
+    }
+
+    return registro.userId;
+  });
+}
+
+/**
  * Verifica un token: busca por hash, valida caducidad y uso único.
  * Marca el token como usado si es válido (un solo uso).
  *
@@ -70,42 +115,7 @@ export async function verificarToken(
   tokenPlano: string,
   tipo: TipoToken,
 ): Promise<string | null> {
-  const tokenHashValue = hashToken(tokenPlano);
-
-  const registro = await prisma.tokenVerificacion.findFirst({
-    where: {
-      tokenHash: tokenHashValue,
-      tipo,
-      usedAt: null,
-    },
-  });
-
-  if (!registro) return null;
-
-  // Verificar caducidad
-  if (registro.expiresAt < new Date()) {
-    // Marcar como usado para evitar consultas futuras
-    await prisma.tokenVerificacion.update({
-      where: { id: registro.id },
-      data: { usedAt: new Date() },
-    });
-    return null;
-  }
-
-  // Comparación en tiempo constante del hash (evita timing attacks, CWE-208)
-  const hashBuffer = Buffer.from(registro.tokenHash, "hex");
-  const inputBuffer = Buffer.from(tokenHashValue, "hex");
-  if (!timingSafeEqual(hashBuffer, inputBuffer)) {
-    return null;
-  }
-
-  // Marcar como usado (un solo uso)
-  await prisma.tokenVerificacion.update({
-    where: { id: registro.id },
-    data: { usedAt: new Date() },
-  });
-
-  return registro.userId;
+  return consumirTokenAtomico(tokenPlano, tipo);
 }
 
 /**
@@ -142,10 +152,7 @@ export async function validarTokenSinConsumir(
 export async function consumirTokenPorValor(
   tokenPlano: string,
   tipo: TipoToken,
-): Promise<void> {
-  const tokenHashValue = hashToken(tokenPlano);
-  await prisma.tokenVerificacion.updateMany({
-    where: { tokenHash: tokenHashValue, tipo, usedAt: null },
-    data: { usedAt: new Date() },
-  });
+): Promise<boolean> {
+  const userId = await consumirTokenAtomico(tokenPlano, tipo);
+  return userId !== null;
 }

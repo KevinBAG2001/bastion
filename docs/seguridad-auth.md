@@ -120,11 +120,12 @@ cookie con atributos de seguridad estrictos.
 - **Envío accidental a otros sitios (CWE-352):** `SameSite=Lax` restringe el envío.
 - **Interceptación en tránsito (CWE-319):** `Secure` (en producción) fuerza HTTPS.
 
-**Invalidación de sesiones:**
-- Al cambiar la contraseña, se incrementa `sessionVersion` en la base de datos.
-- Cada JWT contiene el `sessionVersion` del momento del login.
-- En el próximo refresco, si la versión no coincide, la sesión se invalida.
-- Esto permite "cerrar sesión en todos los dispositivos".
+**Invalidación de sesiones (C1):**
+- Al cambiar la contraseña o pulsar "Cerrar todas las sesiones", se incrementa `sessionVersion` en PostgreSQL.
+- Cada JWT guarda el `sessionVersion` del momento del login.
+- En **cada** llamada a `auth()` el callback `jwt` compara con la base de datos (no solo cuando el cliente pide `update`).
+- El middleware Edge no puede usar Prisma; si hay cookie JWT en rutas protegidas, consulta `/api/auth/comprobar-sesion` y **borra la cookie** si la sesión fue revocada.
+- Helper común: `src/lib/sesion-valida.ts` para páginas, Server Actions y Route Handlers Node.
 
 ---
 
@@ -259,9 +260,14 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 3. Solo tras confirmar un código TOTP válido se activa 2FA y se muestran los códigos de respaldo (una sola vez).
 
 **Login en dos fases:**
-1. Tras contraseña correcta, **no** se crea sesión JWT completa: se emite un token `LOGIN_PENDIENTE_2FA` (5 minutos, hash en BD).
+1. Tras contraseña correcta, **no** se crea sesión JWT completa: se emite un token `LOGIN_PENDIENTE_2FA` (5 minutos, hash en BD) **solo en cookie HttpOnly** (M3). No se devuelve al navegador en JSON ni en campos ocultos.
 2. El usuario ingresa TOTP o código de respaldo; entonces Auth.js emite la cookie de sesión.
-3. El límite de intentos de PostgreSQL aplica también a la llave `2fa:cuenta:<correo>`.
+3. El límite de intentos usa la llave `2fa:cuenta:<userId>` resuelto desde el token pendiente, no el correo enviado por el cliente (A1).
+4. Consumo del token pendiente, anti-replay TOTP y códigos de respaldo usan `updateMany` condicional en transacciones Prisma (A5).
+
+**Códigos de respaldo (M1):** los lotes nuevos usan 80 bits de entropía (16 caracteres base32 en cuatro grupos). Los códigos antiguos de 32 bits siguen válidos hasta usarlos o regenerar el lote.
+
+**Rate limit de configuración (M2):** las rutas `POST /api/auth/2fa/*` aplican `verificarLimite` con llave `2fa:setup:<userId>`.
 
 **Desactivación:** Requiere contraseña **y** código TOTP (no se aceptan códigos de respaldo para desactivar, para evitar que quien robe un respaldo desactive tu 2FA).
 
@@ -323,8 +329,10 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 | `src/lib/bitacora-seguridad.ts` | Bitácora de eventos |
 | `src/lib/csrf.ts` | Protección CSRF para Route Handlers |
 | `src/lib/validations.ts` | Esquemas zod de validación |
-| `src/auth.ts` | Configuración Auth.js con Argon2id |
-| `src/middleware.ts` | Encabezados de seguridad y CSP |
+| `src/auth.ts` | Configuración Auth.js con Argon2id y sessionVersion en cada jwt |
+| `src/lib/sesion-valida.ts` | Helper de sesión revocada y borrado de cookie |
+| `src/app/api/auth/comprobar-sesion/route.ts` | Comprobación Node para middleware Edge |
+| `src/middleware.ts` | Encabezados de seguridad, CSP y comprobación de sesión |
 | `src/actions/auth.ts` | Server Action de login |
 | `src/app/api/auth/register/route.ts` | Registro con todas las protecciones |
 | `src/app/api/auth/verificar-correo/route.ts` | Verificación de correo |
