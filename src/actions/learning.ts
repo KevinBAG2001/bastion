@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { auth } from "@/auth";
+import { obtenerSesionAutenticada } from "@/lib/sesion-valida";
 import {
   grantAchievement,
   checkExploradorAchievement,
@@ -13,7 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { quizSubmitSchema } from "@/lib/validations";
 
 async function requireUserId() {
-  const session = await auth();
+  const session = await obtenerSesionAutenticada();
   if (!session?.user?.id) {
     throw new Error("No autorizado");
   }

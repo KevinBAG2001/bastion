@@ -3,9 +3,13 @@
  */
 
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { obtenerSesionAutenticada, respuestaSesionRevocada } from "@/lib/sesion-valida";
 import { prisma } from "@/lib/prisma";
 import { verificarOrigenCSRF } from "@/lib/csrf";
+import {
+  rechazarSiSetup2FABloqueado,
+  registrarIntentoSetup2FA,
+} from "@/lib/setup-2fa-limits";
 import { desactivar2FASchema } from "@/lib/validations";
 import { verificarCredenciales } from "@/lib/verificar-credenciales";
 import { verificarSegundoFactor, incrementarSessionVersion } from "@/lib/verificar-segundo-factor";
@@ -16,9 +20,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Solicitud no autorizada." }, { status: 403 });
   }
 
-  const session = await auth();
+  const session = await obtenerSesionAutenticada();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+    return respuestaSesionRevocada();
+  }
+
+  const bloqueo = await rechazarSiSetup2FABloqueado(session.user.id);
+  if (bloqueo) {
+    return bloqueo;
   }
 
   let body: unknown;
@@ -48,19 +57,22 @@ export async function POST(request: Request) {
     );
   }
 
+  // B1: un solo mensaje genérico — no revelar si falló la contraseña o el TOTP (CWE-203).
+  const mensajeRechazo =
+    "No se pudo desactivar la verificación en dos pasos. Comprueba tu contraseña y un código TOTP válido (no se aceptan códigos de respaldo).";
+
   const credenciales = await verificarCredenciales(user.email, parsed.data.password);
   if (!credenciales) {
-    return NextResponse.json({ error: "Contraseña incorrecta." }, { status: 400 });
+    await registrarIntentoSetup2FA(session.user.id, false);
+    return NextResponse.json({ error: mensajeRechazo }, { status: 400 });
   }
 
   const segundoFactor = await verificarSegundoFactor(session.user.id, parsed.data.codigo, {
     evitarReplay: false,
   });
   if (!segundoFactor.valido || segundoFactor.tipo !== "totp") {
-    return NextResponse.json(
-      { error: "Código TOTP incorrecto. Los códigos de respaldo no aplican aquí." },
-      { status: 400 },
-    );
+    await registrarIntentoSetup2FA(session.user.id, false);
+    return NextResponse.json({ error: mensajeRechazo }, { status: 400 });
   }
 
   await prisma.$transaction([
@@ -84,6 +96,8 @@ export async function POST(request: Request) {
     modulo: "2fa",
     resultado: "exito",
   });
+
+  await registrarIntentoSetup2FA(session.user.id, true);
 
   return NextResponse.json({ message: "Verificación en dos pasos desactivada." });
 }

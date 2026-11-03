@@ -17,6 +17,7 @@ import { hashContrasena } from "@/lib/argon2";
 import { verificarContrasenFiltrada } from "@/lib/hibp";
 import { verificarOrigenCSRF } from "@/lib/csrf";
 import { registrarEvento } from "@/lib/bitacora-seguridad";
+import { ipClienteDesdeRequest } from "@/lib/ip-cliente";
 
 export async function POST(request: Request) {
   if (!verificarOrigenCSRF(request)) {
@@ -71,8 +72,7 @@ export async function POST(request: Request) {
     },
   });
 
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = ipClienteDesdeRequest(request);
 
   await registrarEvento({
     userId,

@@ -48,7 +48,7 @@ export const codigo2FASchema = z.object({
     .string()
     .trim()
     .min(6, "Ingresa el código de verificación.")
-    .max(16),
+    .max(24),
 });
 
 export const desactivar2FASchema = z.object({

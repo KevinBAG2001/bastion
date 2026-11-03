@@ -16,6 +16,8 @@
 9. [Bitácora de eventos de seguridad](#9-bitácora-de-eventos-de-seguridad)
 10. [Mensajes genéricos y tiempo constante](#10-mensajes-genéricos-y-tiempo-constante)
 11. [Verificación en dos pasos (TOTP)](#11-verificación-en-dos-pasos-totp)
+12. [IP del cliente y proxies de confianza](#12-ip-del-cliente-y-proxies-de-confianza)
+13. [Hallazgos de auditoría (M6, A4, B1–B4, M5)](#13-hallazgos-de-auditoría-m6-a4-b1b4-m5)
 
 ---
 
@@ -106,6 +108,14 @@ temporalmente con tiempos progresivos.
 una sola instancia. PostgreSQL ya está disponible y los intentos se consultan
 con un índice optimizado. Si se escala a múltiples instancias, migrar a Redis.
 
+**Llaves usadas:**
+- Login (Server Action `src/actions/auth.ts`): `ip:<cliente>` y `cuenta:<email>`.
+- Segunda fase 2FA: `2fa:ip:<cliente>` y `2fa:cuenta:<userId>`.
+- Registro y recuperación (Route Handlers): `ip:<cliente>`.
+
+La IP proviene de `src/lib/ip-cliente.ts` (no del primer valor crudo de
+`X-Forwarded-For`). Ver [sección 12](#12-ip-del-cliente-y-proxies-de-confianza).
+
 ---
 
 ## 4. Sesiones seguras (cookies HttpOnly)
@@ -120,11 +130,12 @@ cookie con atributos de seguridad estrictos.
 - **Envío accidental a otros sitios (CWE-352):** `SameSite=Lax` restringe el envío.
 - **Interceptación en tránsito (CWE-319):** `Secure` (en producción) fuerza HTTPS.
 
-**Invalidación de sesiones:**
-- Al cambiar la contraseña, se incrementa `sessionVersion` en la base de datos.
-- Cada JWT contiene el `sessionVersion` del momento del login.
-- En el próximo refresco, si la versión no coincide, la sesión se invalida.
-- Esto permite "cerrar sesión en todos los dispositivos".
+**Invalidación de sesiones (C1):**
+- Al cambiar la contraseña o pulsar "Cerrar todas las sesiones", se incrementa `sessionVersion` en PostgreSQL.
+- Cada JWT guarda el `sessionVersion` del momento del login.
+- En **cada** llamada a `auth()` el callback `jwt` compara con la base de datos (no solo cuando el cliente pide `update`).
+- El middleware Edge no puede usar Prisma; si hay cookie JWT en rutas protegidas, consulta `/api/auth/comprobar-sesion` y **borra la cookie** si la sesión fue revocada.
+- Helper común: `src/lib/sesion-valida.ts` para páginas, Server Actions y Route Handlers Node.
 
 ---
 
@@ -147,7 +158,11 @@ El usuario debe hacer clic en el enlace para activar su cuenta.
 - Un solo uso: se marca como "usado" inmediatamente.
 
 **Adaptador de correo:** En desarrollo, los correos se imprimen en la consola
-del servidor. En producción, cambiar por Resend, SES u otro servicio.
+del servidor (costo cero). En producción, cambiar por Resend, SES u otro servicio.
+Ver [A4 — logs y secretos](#a4--adaptador-de-consola-y-logs-cwe-532).
+
+**Enlace de verificación:** Apunta a `/verificar-correo?token=…` (POST desde la
+página) en lugar de consumir el token solo por GET en la API. Ver [B4](#b4--verificación-de-correo-y-referrer).
 
 ---
 
@@ -179,7 +194,10 @@ tu navegador envíe solicitudes a Bastion sin tu consentimiento.
   o inscribirte en cursos sin que lo sepas.
 
 **¿Cómo funciona?**
-- Los Route Handlers verifican que el encabezado `Origin` coincida con el host.
+- Los Route Handlers **POST/PUT/DELETE** autenticados o sensibles verifican que el
+  encabezado `Origin` (o `Referer`) coincida con el host — incluidos
+  `cerrar-todas-sesiones`, `register`, recuperación y todas las rutas `2fa/*`
+  (B3).
 - Las Server Actions de Next.js tienen protección CSRF automática.
 - Auth.js gestiona su propio token CSRF para `/api/auth/*`.
 
@@ -201,8 +219,13 @@ contenido de forma segura.
 | `Permissions-Policy` | Acceso no autorizado a cámara, micrófono, etc. |
 | `Strict-Transport-Security` | Downgrade a HTTP (CWE-319) |
 
-**CSP con nonce:** Se genera un nonce criptográfico aleatorio en cada solicitud.
-Solo los scripts con ese nonce pueden ejecutarse, bloqueando scripts inyectados.
+**CSP y `unsafe-inline` (M5):** Hoy `script-src` incluye `'unsafe-inline'` porque
+Next.js 16 inyecta scripts de hidratación inline y Tailwind usa estilos inline.
+Probar nonces con la API de Next (`nonce` en middleware + layout) rompió la carga
+de la app en este monolito educativo. **Riesgo pendiente:** un XSS que escape el
+escape de React podría ejecutar script inline; la mitigación principal sigue siendo
+no insertar HTML crudo de usuarios. Cuando el proyecto migre a un despliegue con
+CSP estricto, revisar la guía oficial de Next.js para nonces en App Router.
 
 ---
 
@@ -221,6 +244,8 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 - NUNCA se registran contraseñas, hashes, tokens ni cookies.
 - Los correos se redactan parcialmente: `kevin@gmail.com` → `k***@g***.c***`.
 - Se registra la acción, el resultado y la IP (para correlacionar ataques).
+- La IP proviene de `ip-cliente.ts` (antes el login por Server Action guardaba
+  el literal `server-action`, inútil para forense).
 
 ---
 
@@ -236,8 +261,12 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 **¿Cómo lo resolvemos?**
 - El mensaje de error de login siempre dice "Correo o contraseña incorrectos."
 - En registro y recuperación, siempre dice "Si el correo es válido, recibirás..."
-- Cuando el usuario no existe, se ejecuta un hash Argon2id dummy para igualar
-  el tiempo de respuesta.
+- En **registro**, si el correo ya existe, se ejecuta un hash Argon2id dummy
+  antes de responder (mismo costo que crear la cuenta).
+- En **recuperación de contraseña**, siempre se lanza un hash Argon2id en
+  paralelo a la búsqueda del usuario; si hay cuenta, además se genera el token.
+  Un piso mínimo de latencia (`tiempo-respuesta-constante.ts`) dificulta medir
+  diferencias finas entre ambos caminos.
 
 ---
 
@@ -259,13 +288,107 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 3. Solo tras confirmar un código TOTP válido se activa 2FA y se muestran los códigos de respaldo (una sola vez).
 
 **Login en dos fases:**
-1. Tras contraseña correcta, **no** se crea sesión JWT completa: se emite un token `LOGIN_PENDIENTE_2FA` (5 minutos, hash en BD).
+1. Tras contraseña correcta, **no** se crea sesión JWT completa: se emite un token `LOGIN_PENDIENTE_2FA` (5 minutos, hash en BD) **solo en cookie HttpOnly** (M3). No se devuelve al navegador en JSON ni en campos ocultos.
 2. El usuario ingresa TOTP o código de respaldo; entonces Auth.js emite la cookie de sesión.
-3. El límite de intentos de PostgreSQL aplica también a la llave `2fa:cuenta:<correo>`.
+3. El límite de intentos usa la llave `2fa:cuenta:<userId>` resuelto desde el token pendiente, no el correo enviado por el cliente (A1).
+4. Consumo del token pendiente, anti-replay TOTP y códigos de respaldo usan `updateMany` condicional en transacciones Prisma (A5).
+
+**Códigos de respaldo (M1):** los lotes nuevos usan 80 bits de entropía (16 caracteres base32 en cuatro grupos). Los códigos antiguos de 32 bits siguen válidos hasta usarlos o regenerar el lote.
+
+**Rate limit de configuración (M2):** las rutas `POST /api/auth/2fa/*` aplican `verificarLimite` con llave `2fa:setup:<userId>`.
 
 **Desactivación:** Requiere contraseña **y** código TOTP (no se aceptan códigos de respaldo para desactivar, para evitar que quien robe un respaldo desactive tu 2FA).
+Si falla cualquiera de los dos, la API responde con **un solo mensaje genérico** (B1 / CWE-203).
 
 **Clave de cifrado:** Genera `TOTP_ENCRYPTION_KEY` con `openssl rand -base64 32` (32 bytes aleatorios). Documentada en `.env.example`; nunca la subas al repositorio.
+
+---
+
+## 12. IP del cliente y proxies de confianza
+
+**Archivo:** `src/lib/ip-cliente.ts`
+
+**¿Qué es?** Un helper único que decide qué IP registrar en la bitácora y usar
+en rate limiting, tanto en Route Handlers como en Server Actions (`headers()`).
+
+**¿Qué ataque evita?**
+- **Spoofing de X-Forwarded-For (CWE-290):** Si la app confía ciegamente en el
+  primer valor del encabezado, un atacante puede evadir límites por IP o falsificar
+  la bitácora.
+
+**Comportamiento:**
+- **Sin proxy de confianza** (`BASTION_TRUSTED_PROXY` omitido o `0`): se ignora
+  `X-Forwarded-For` y `X-Real-IP`. La llave es la constante `directo` (todos los
+  clientes directos comparten bucket en local; es preferible a aceptar IPs falsas).
+- **Con proxy de confianza** (`BASTION_TRUSTED_PROXY=N`): se interpreta
+  `X-Forwarded-For` tomando la entrada del cliente según N saltos de proxy, o
+  `X-Real-IP` si el proxy solo envía ese encabezado.
+
+**Configuración:** Ver comentarios en `.env.example`.
+
+**Prueba unitaria:** `src/lib/ip-cliente.test.ts` verifica que un
+`X-Forwarded-For` inventado no cambia la llave cuando no hay proxy de confianza.
+
+---
+
+## 13. Hallazgos de auditoría (M6, A4, B1–B4, M5)
+
+### M6 — Endpoint `test-utils` en build de producción
+
+**Archivos:** `src/app/api/auth/test-utils/route.ts`, `src/lib/test-utils-e2e.ts`
+
+El código del endpoint viaja en el bundle aunque solo se use en pruebas. Condiciones:
+
+| Entorno | Requisitos |
+|:--|:--|
+| Desarrollo | `BASTION_E2E=1` |
+| Producción (CI: `pnpm build` + `pnpm start`) | `BASTION_E2E=1` **y** `BASTION_E2E_SECRET` **y** cabecera `x-bastion-e2e-secret` |
+
+El secreto se genera en `.github/workflows/ci.yml` con `openssl rand`; no hay valores en el repo.
+
+**Prueba unitaria:** `src/lib/test-utils-e2e.test.ts`
+
+### A4 — Adaptador de consola y logs (CWE-532)
+
+**Archivo:** `src/lib/correo.ts`
+
+En local el adaptador imprime el correo completo para aprender. En `NODE_ENV=production`:
+
+- Los tokens en URLs se reemplazan por `[REDACTADO]` antes de `console.log`.
+- Se emite una **advertencia fuerte** la primera vez (sustituir por correo real antes de un despliegue público).
+
+**Riesgo:** Los agregadores de logs retienen datos años; un `?token=` en claro equivale a filtrar credenciales.
+
+**Prueba unitaria:** `src/lib/correo.test.ts`
+
+### B1 — Mensaje genérico al desactivar 2FA
+
+**Archivo:** `src/app/api/auth/2fa/desactivar/route.ts`
+
+No distinguir “contraseña incorrecta” vs “TOTP incorrecto” evita que un atacante pruebe factores por separado.
+
+### B2 — `trustHost: true`
+
+**Archivos:** `src/auth.config.ts`, `src/lib/validar-config-auth.ts`
+
+`trustHost` permite que Auth.js confíe en el host de la petición (proxies, PaaS). En producción **`AUTH_URL` es obligatorio** al arrancar; si falta, el proceso falla con un error claro. Documentado en `.env.example`.
+
+### B3 — CSRF en mutaciones autenticadas
+
+**Archivo:** `src/lib/csrf.ts` y cada Route Handler POST bajo `src/app/api/auth/`
+
+Auditoría: `register`, `recuperar-contrasena`, `restablecer-contrasena`, `cerrar-todas-sesiones` y las cuatro rutas `2fa/*` llaman a `verificarOrigenCSRF` al inicio.
+
+### B4 — Verificación de correo y Referer
+
+**Archivos:** `src/app/verificar-correo/*`, `src/app/api/auth/verificar-correo/route.ts`, `src/middleware.ts`
+
+- Enlace del correo → `/verificar-correo?token=…` → la página quita el token de la URL (`history.replaceState`) y confirma con **POST** (CSRF por Origin).
+- GET legacy en la API sigue funcionando para enlaces antiguos, con `Referrer-Policy: no-referrer` y redirección a login **sin** token en la query.
+
+### M5 — CSP `unsafe-inline`
+
+Documentado en [sección 8](#8-encabezados-de-seguridad-y-csp). Nonces evaluados; no aplicados para no romper Next.js + Tailwind en este repo educativo.
 
 ---
 
@@ -318,13 +441,17 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 | `src/lib/argon2.ts` | Hash y verificación Argon2id |
 | `src/lib/hibp.ts` | Verificación HIBP k-anonymity |
 | `src/lib/limite-intentos.ts` | Rate limiting en PostgreSQL |
+| `src/lib/ip-cliente.ts` | IP del cliente sin spoofing de XFF |
+| `src/lib/tiempo-respuesta-constante.ts` | Piso de latencia anti timing attacks |
 | `src/lib/tokens.ts` | Tokens seguros de un solo uso |
 | `src/lib/correo.ts` | Adaptador de correo (consola) |
 | `src/lib/bitacora-seguridad.ts` | Bitácora de eventos |
 | `src/lib/csrf.ts` | Protección CSRF para Route Handlers |
 | `src/lib/validations.ts` | Esquemas zod de validación |
-| `src/auth.ts` | Configuración Auth.js con Argon2id |
-| `src/middleware.ts` | Encabezados de seguridad y CSP |
+| `src/auth.ts` | Configuración Auth.js con Argon2id y sessionVersion en cada jwt |
+| `src/lib/sesion-valida.ts` | Helper de sesión revocada y borrado de cookie |
+| `src/app/api/auth/comprobar-sesion/route.ts` | Comprobación Node para middleware Edge |
+| `src/middleware.ts` | Encabezados de seguridad, CSP y comprobación de sesión |
 | `src/actions/auth.ts` | Server Action de login |
 | `src/app/api/auth/register/route.ts` | Registro con todas las protecciones |
 | `src/app/api/auth/verificar-correo/route.ts` | Verificación de correo |
@@ -343,10 +470,11 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 
 ---
 
-## Riesgos pendientes (fuera de este PR)
+## Riesgos pendientes
 
-1. **Adaptador de correo real:** Hoy se imprime en consola; en producción usar Resend/SES.
-2. **Rate limiting distribuido:** Si se escala a múltiples instancias, migrar a Redis/Upstash.
-3. **Limpieza de intentos antiguos:** Implementar cron para `limpiarIntentosAntiguos()`.
-4. **CAPTCHA:** No implementado; agregar como evolución con alternativa accesible.
-5. **Migración progresiva de bcrypt a Argon2id:** Los hashes legados se re-hashean al login.
+1. **Adaptador de correo real:** Hoy se imprime en consola; en producción usar Resend/SES (A4 mitiga logs, no sustituye el envío real).
+2. **CSP sin `unsafe-inline` (M5):** Requiere nonces alineados con Next.js 16 y Tailwind v4.
+3. **Rate limiting distribuido:** Si se escala a múltiples instancias, migrar a Redis/Upstash.
+4. **Limpieza de intentos antiguos:** Implementar cron para `limpiarIntentosAntiguos()`.
+5. **CAPTCHA:** No implementado; agregar como evolución con alternativa accesible.
+6. **Migración progresiva de bcrypt a Argon2id:** Los hashes legados se re-hashean al login.
