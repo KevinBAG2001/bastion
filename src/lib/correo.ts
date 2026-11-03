@@ -1,3 +1,20 @@
+import type { TipoToken } from "@prisma/client";
+
+/** Tokens emitidos en e2e (BASTION_E2E=1) para pruebas sin leer la consola del servidor. */
+const tokensE2e = new Map<string, Partial<Record<TipoToken, string>>>();
+
+function registrarTokenE2e(para: string, tipo: TipoToken, token: string): void {
+  if (process.env.BASTION_E2E !== "1") return;
+  const key = para.toLowerCase();
+  tokensE2e.set(key, { ...tokensE2e.get(key), [tipo]: token });
+}
+
+/** Solo disponible con BASTION_E2E=1 (endpoint test-utils). */
+export function obtenerTokenE2e(para: string, tipo: TipoToken): string | null {
+  if (process.env.BASTION_E2E !== "1") return null;
+  return tokensE2e.get(para.toLowerCase())?.[tipo] ?? null;
+}
+
 /**
  * Adaptador de correo electrónico intercambiable.
  *
@@ -64,6 +81,8 @@ export async function enviarCorreoVerificacion(
   const baseUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000";
   const enlace = `${baseUrl}/api/auth/verificar-correo?token=${token}`;
 
+  registrarTokenE2e(para, "VERIFICACION_CORREO", token);
+
   await enviarCorreo({
     para,
     asunto: "Verifica tu cuenta en Bastion",
@@ -89,6 +108,8 @@ export async function enviarCorreoRecuperacion(
 ): Promise<void> {
   const baseUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000";
   const enlace = `${baseUrl}/restablecer-contrasena?token=${token}`;
+
+  registrarTokenE2e(para, "RECUPERACION_CONTRASENA", token);
 
   await enviarCorreo({
     para,

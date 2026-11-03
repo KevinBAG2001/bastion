@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { auth } from "@/auth";
+import { SeguridadCuenta } from "@/components/auth/seguridad-cuenta";
 import { levelProgress, xpForLevel, xpToNextLevel } from "@/lib/gamification";
 import { prisma } from "@/lib/prisma";
 
@@ -50,6 +51,11 @@ export default async function ProfilePage() {
           </p>
         </div>
       </section>
+
+      <SeguridadCuenta
+        emailVerifiedAtIso={user.emailVerifiedAt?.toISOString() ?? null}
+        totpActivo={user.totpEnabledAt !== null}
+      />
 
       <section className="mt-10">
         <h2 className="text-xl font-semibold">Logros</h2>

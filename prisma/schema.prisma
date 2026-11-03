@@ -25,10 +25,19 @@ model User {
   /// Incrementar para invalidar todas las sesiones JWT del usuario.
   /// Evita ataques de persistencia de sesión (CWE-613).
   sessionVersion    Int       @default(0)
+  /// Fecha en que el usuario activó TOTP (null = 2FA desactivado).
+  totpEnabledAt     DateTime?
+  /// Secreto TOTP cifrado con AES-256-GCM (ver TOTP_ENCRYPTION_KEY).
+  totpSecretCifrado String?
+  /// Secreto pendiente de confirmación durante el flujo de activación.
+  totpSecretoPendienteCifrado String?
+  /// Último paso de tiempo TOTP usado con éxito (evita reutilización en la misma ventana).
+  totpUltimoPasoUsado Int?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   enrollments        Enrollment[]
+  codigosRespaldo2FA CodigoRespaldo2FA[]
   lessonProgress     LessonProgress[]
   quizAttempts       QuizAttempt[]
   achievements       UserAchievement[]
@@ -140,6 +149,8 @@ model QuizAttempt {
 enum TipoToken {
   VERIFICACION_CORREO
   RECUPERACION_CONTRASENA
+  /// Token de un solo uso tras contraseña correcta, antes de validar el segundo factor.
+  LOGIN_PENDIENTE_2FA
 }
 
 /// Tokens de un solo uso para verificación de correo y recuperación de contraseña.
@@ -192,6 +203,19 @@ model EventoSeguridad {
 
   @@index([userId, createdAt])
   @@index([accion, createdAt])
+}
+
+/// Códigos de respaldo de un solo uso para 2FA (hash SHA-256, CWE-257).
+model CodigoRespaldo2FA {
+  id         String    @id @default(cuid())
+  userId     String
+  codigoHash String
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
 }
 
 model Achievement {
