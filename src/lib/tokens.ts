@@ -16,6 +16,7 @@ import type { TipoToken } from "@prisma/client";
 const CADUCIDAD_MS: Record<TipoToken, number> = {
   VERIFICACION_CORREO: 24 * 60 * 60 * 1000,     // 24 horas
   RECUPERACION_CONTRASENA: 30 * 60 * 1000,       // 30 minutos
+  LOGIN_PENDIENTE_2FA: 5 * 60 * 1000,             // 5 minutos
 };
 
 /**
@@ -105,4 +106,46 @@ export async function verificarToken(
   });
 
   return registro.userId;
+}
+
+/**
+ * Valida un token pendiente sin consumirlo (para comprobar el segundo factor antes).
+ */
+export async function validarTokenSinConsumir(
+  tokenPlano: string,
+  tipo: TipoToken,
+): Promise<string | null> {
+  const tokenHashValue = hashToken(tokenPlano);
+
+  const registro = await prisma.tokenVerificacion.findFirst({
+    where: {
+      tokenHash: tokenHashValue,
+      tipo,
+      usedAt: null,
+    },
+  });
+
+  if (!registro || registro.expiresAt < new Date()) {
+    return null;
+  }
+
+  const hashBuffer = Buffer.from(registro.tokenHash, "hex");
+  const inputBuffer = Buffer.from(tokenHashValue, "hex");
+  if (!timingSafeEqual(hashBuffer, inputBuffer)) {
+    return null;
+  }
+
+  return registro.userId;
+}
+
+/** Marca un token como usado tras completar el flujo (p. ej. login 2FA exitoso). */
+export async function consumirTokenPorValor(
+  tokenPlano: string,
+  tipo: TipoToken,
+): Promise<void> {
+  const tokenHashValue = hashToken(tokenPlano);
+  await prisma.tokenVerificacion.updateMany({
+    where: { tokenHash: tokenHashValue, tipo, usedAt: null },
+    data: { usedAt: new Date() },
+  });
 }
