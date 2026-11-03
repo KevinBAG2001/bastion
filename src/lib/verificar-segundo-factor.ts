@@ -20,7 +20,9 @@ export interface ResultadoSegundoFactor {
 export async function verificarSegundoFactor(
   userId: string,
   codigo: string,
+  opciones?: { evitarReplay?: boolean },
 ): Promise<ResultadoSegundoFactor> {
+  const evitarReplay = opciones?.evitarReplay ?? true;
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -39,16 +41,19 @@ export async function verificarSegundoFactor(
 
   if (totp.valido && totp.pasoUsado !== undefined) {
     if (
+      evitarReplay &&
       user.totpUltimoPasoUsado !== null &&
       user.totpUltimoPasoUsado >= totp.pasoUsado
     ) {
       return { valido: false };
     }
 
-    await prisma.user.update({
-      where: { id: userId },
-      data: { totpUltimoPasoUsado: totp.pasoUsado },
-    });
+    if (evitarReplay) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { totpUltimoPasoUsado: totp.pasoUsado },
+      });
+    }
 
     return { valido: true, tipo: "totp" };
   }

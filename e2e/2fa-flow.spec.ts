@@ -58,8 +58,8 @@ test.describe("Verificación en dos pasos (TOTP)", () => {
       `/api/auth/test-utils?email=${encodeURIComponent(email)}&accion=totp-generar`,
     );
     const { token: tokenOff } = await totpOff.json();
-    await page.getByPlaceholder("Contraseña").fill(password);
-    await page.getByPlaceholder("Código TOTP").fill(tokenOff);
+    await page.getByPlaceholder("Contraseña para desactivar").fill(password);
+    await page.getByPlaceholder("Código TOTP para desactivar").fill(tokenOff);
     await page.getByRole("button", { name: "Desactivar" }).click();
     await expect(page.getByText(/desactivada/i)).toBeVisible();
   });

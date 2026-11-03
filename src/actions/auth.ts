@@ -12,6 +12,7 @@
 
 "use server";
 
+import { cookies } from "next/headers";
 import { AuthError } from "next-auth";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { signIn } from "@/auth";
@@ -21,6 +22,9 @@ import { registrarEvento, redactarCorreo } from "@/lib/bitacora-seguridad";
 import { verificarCredenciales } from "@/lib/verificar-credenciales";
 import { generarToken } from "@/lib/tokens";
 import { prisma } from "@/lib/prisma";
+
+const COOKIE_LOGIN_PENDIENTE = "bastion_login_pendiente_2fa";
+const MAX_AGE_PENDIENTE_SEG = 5 * 60;
 
 export type EstadoLogin =
   | { error?: string }
@@ -74,6 +78,14 @@ export async function loginWithCredentials(
 
   if (usuario.totpActivo) {
     const pendingToken = await generarToken(usuario.id, "LOGIN_PENDIENTE_2FA");
+    const jar = await cookies();
+    jar.set(COOKIE_LOGIN_PENDIENTE, pendingToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: MAX_AGE_PENDIENTE_SEG,
+    });
     await registrarEvento({
       userId: usuario.id,
       accion: "login_2fa_pendiente",
@@ -130,7 +142,10 @@ export async function loginWithSecondFactor(
   formData: FormData,
 ): Promise<{ error?: string }> {
   const email = String(formData.get("email") ?? "").toLowerCase();
-  const pendingToken = String(formData.get("pendingToken") ?? "");
+  const jar = await cookies();
+  const pendingToken =
+    jar.get(COOKIE_LOGIN_PENDIENTE)?.value ??
+    String(formData.get("pendingToken") ?? "");
   const ip = "server-action";
 
   const limite2fa = await verificarLimite(`2fa:cuenta:${email}`);
@@ -159,15 +174,14 @@ export async function loginWithSecondFactor(
   }
 
   try {
-    await signIn("credentials", {
-      email,
-      password: "",
+    await signIn("credentials-2fa", {
       mfaPendingToken: pendingToken,
       mfaCode: parsed.data.codigo,
       redirectTo: String(formData.get("callbackUrl") ?? "/panel"),
     });
   } catch (error) {
     if (isRedirectError(error)) {
+      jar.delete(COOKIE_LOGIN_PENDIENTE);
       const user = await prisma.user.findUnique({
         where: { email },
         select: { id: true },

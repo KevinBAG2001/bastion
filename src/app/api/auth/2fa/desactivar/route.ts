@@ -53,7 +53,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Contraseña incorrecta." }, { status: 400 });
   }
 
-  const segundoFactor = await verificarSegundoFactor(session.user.id, parsed.data.codigo);
+  const segundoFactor = await verificarSegundoFactor(session.user.id, parsed.data.codigo, {
+    evitarReplay: false,
+  });
   if (!segundoFactor.valido || segundoFactor.tipo !== "totp") {
     return NextResponse.json(
       { error: "Código TOTP incorrecto. Los códigos de respaldo no aplican aquí." },

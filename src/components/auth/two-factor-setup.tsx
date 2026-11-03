@@ -208,14 +208,14 @@ export function TwoFactorSetup({ totpActivo: inicialActivo }: Props) {
               type="password"
               value={passwordDesactivar}
               onChange={(e) => setPasswordDesactivar(e.target.value)}
-              placeholder="Contraseña"
+              placeholder="Contraseña para desactivar"
               required
               className="w-full rounded-xl border border-card-border bg-background px-3 py-2.5 text-sm outline-none ring-accent focus:ring-2"
             />
             <input
               value={codigoDesactivar}
               onChange={(e) => setCodigoDesactivar(e.target.value)}
-              placeholder="Código TOTP"
+              placeholder="Código TOTP para desactivar"
               inputMode="numeric"
               required
               className="w-full rounded-xl border border-card-border bg-background px-3 py-2.5 text-sm outline-none ring-accent focus:ring-2"

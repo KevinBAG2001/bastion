@@ -75,7 +75,8 @@ export async function POST(request: Request) {
       totpEnabledAt: new Date(),
       totpSecretCifrado: secretoCifrado,
       totpSecretoPendienteCifrado: null,
-      totpUltimoPasoUsado: verificacion.pasoUsado ?? null,
+      // totpUltimoPasoUsado se actualiza solo en login (anti-replay), no al activar.
+      totpUltimoPasoUsado: null,
       sessionVersion: { increment: 1 },
     },
   });

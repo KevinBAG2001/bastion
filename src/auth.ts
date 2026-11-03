@@ -18,9 +18,7 @@ import { compare } from "bcryptjs";
 import { verificarContrasena } from "@/lib/argon2";
 import { loginSchema } from "@/lib/validations";
 import { prisma } from "@/lib/prisma";
-import { verificarToken } from "@/lib/tokens";
-import { verificarSegundoFactor } from "@/lib/verificar-segundo-factor";
-import { registrarEvento } from "@/lib/bitacora-seguridad";
+import { completarLoginSegundoFactor } from "@/lib/login-segundo-factor";
 import authConfig from "@/auth.config";
 
 /**
@@ -57,58 +55,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       credentials: {
         email: { label: "Correo", type: "email" },
         password: { label: "Contraseña", type: "password" },
-        mfaPendingToken: { label: "Token 2FA pendiente", type: "text" },
-        mfaCode: { label: "Código 2FA", type: "text" },
       },
       async authorize(credentials) {
-        const mfaToken = String(credentials?.mfaPendingToken ?? "");
-        const mfaCode = String(credentials?.mfaCode ?? "");
-
-        // Segunda fase del login: token pendiente + código TOTP o respaldo
-        if (mfaToken && mfaCode) {
-          const userId = await verificarToken(mfaToken, "LOGIN_PENDIENTE_2FA");
-          if (!userId) return null;
-
-          const resultado = await verificarSegundoFactor(userId, mfaCode);
-          if (!resultado.valido) return null;
-
-          if (resultado.tipo === "respaldo") {
-            await prisma.user.update({
-              where: { id: userId },
-              data: { sessionVersion: { increment: 1 } },
-            });
-            await registrarEvento({
-              userId,
-              accion: "totp_codigo_respaldo_usado",
-              modulo: "login_2fa",
-              resultado: "exito",
-              detalle: "Inicio de sesión con código de respaldo",
-            });
-          }
-
-          const user = await prisma.user.findUnique({
-            where: { id: userId },
-            select: {
-              id: true,
-              email: true,
-              name: true,
-              xp: true,
-              level: true,
-              sessionVersion: true,
-            },
-          });
-          if (!user) return null;
-
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            xp: user.xp,
-            level: user.level,
-            sessionVersion: user.sessionVersion,
-          };
-        }
-
         const parsed = loginSchema.safeParse(credentials);
         if (!parsed.success) return null;
 
@@ -154,6 +102,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           level: user.level,
           sessionVersion: user.sessionVersion,
         };
+      },
+    }),
+    Credentials({
+      id: "credentials-2fa",
+      name: "Segundo factor",
+      credentials: {
+        mfaPendingToken: { label: "Token 2FA pendiente", type: "text" },
+        mfaCode: { label: "Código 2FA", type: "text" },
+      },
+      async authorize(credentials) {
+        const mfaToken = String(credentials?.mfaPendingToken ?? "");
+        const mfaCode = String(credentials?.mfaCode ?? "");
+        if (!mfaToken || !mfaCode) return null;
+        return completarLoginSegundoFactor(mfaToken, mfaCode);
       },
     }),
   ],

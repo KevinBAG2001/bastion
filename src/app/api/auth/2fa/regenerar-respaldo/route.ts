@@ -48,7 +48,9 @@ export async function POST(request: Request) {
     );
   }
 
-  const segundoFactor = await verificarSegundoFactor(session.user.id, parsed.data.codigo);
+  const segundoFactor = await verificarSegundoFactor(session.user.id, parsed.data.codigo, {
+    evitarReplay: false,
+  });
   if (!segundoFactor.valido || segundoFactor.tipo !== "totp") {
     return NextResponse.json({ error: "Código TOTP incorrecto." }, { status: 400 });
   }
