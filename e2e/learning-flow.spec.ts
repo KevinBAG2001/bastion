@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { cabecerasTestUtils } from "./helpers/cabeceras-test-utils";
 
 const email = `estudiante-${Date.now()}@ejemplo.test`;
 const password = "Basti0n!2026x";
@@ -25,6 +26,7 @@ test.describe("Flujo de aprendizaje", () => {
     // --- Verificación de correo (vía endpoint de test, habilitado con BASTION_E2E=1) ---
     const verificacion = await request.get(
       `/api/auth/test-utils?email=${encodeURIComponent(email)}&tipo=VERIFICACION_CORREO`,
+      { headers: cabecerasTestUtils() },
     );
     expect(verificacion.ok()).toBeTruthy();
 

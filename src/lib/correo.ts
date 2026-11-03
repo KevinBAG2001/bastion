@@ -46,16 +46,45 @@ export interface AdaptadorCorreo {
  */
 const adaptadorConsola: AdaptadorCorreo = {
   async enviar(opciones: CorreoOpciones): Promise<void> {
+    advertirConsolaEnProduccion();
+    const cuerpo =
+      process.env.NODE_ENV === "production"
+        ? enmascararSecretosEnTexto(opciones.textoPlano)
+        : opciones.textoPlano;
+
     console.log("\n╔══════════════════════════════════════════════════════╗");
     console.log("║          📧 CORREO (adaptador de consola)           ║");
     console.log("╠══════════════════════════════════════════════════════╣");
     console.log(`║ Para:   ${opciones.para}`);
     console.log(`║ Asunto: ${opciones.asunto}`);
     console.log("╠══════════════════════════════════════════════════════╣");
-    console.log(opciones.textoPlano);
+    console.log(cuerpo);
     console.log("╚══════════════════════════════════════════════════════╝\n");
   },
 };
+
+/**
+ * Enmascara tokens en URLs antes de loguear (A4, CWE-532).
+ * Los logs centralizados (Docker, CloudWatch, etc.) suelen retenerse años;
+ * un enlace con ?token= filtrado equivale a filtrar la credencial.
+ */
+export function enmascararSecretosEnTexto(texto: string): string {
+  return texto.replace(/([?&]token=)[^&\s]+/gi, "$1[REDACTADO]");
+}
+
+let advertenciaConsolaProduccionEmitida = false;
+
+function advertirConsolaEnProduccion(): void {
+  if (process.env.NODE_ENV !== "production" || advertenciaConsolaProduccionEmitida) {
+    return;
+  }
+  advertenciaConsolaProduccionEmitida = true;
+  console.error(
+    "\n[Bastion] ADVERTENCIA (A4 / CWE-532): el adaptador de correo por consola está activo " +
+      "en NODE_ENV=production. Los tokens en enlaces se enmascaran en el log, pero sustituye " +
+      "este adaptador por un servicio de correo real antes de un despliegue público.\n",
+  );
+}
 
 /** Adaptador activo. Cambiar por otro en producción. */
 let adaptadorActivo: AdaptadorCorreo = adaptadorConsola;
@@ -79,7 +108,7 @@ export async function enviarCorreoVerificacion(
   token: string,
 ): Promise<void> {
   const baseUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-  const enlace = `${baseUrl}/api/auth/verificar-correo?token=${token}`;
+  const enlace = `${baseUrl}/verificar-correo?token=${token}`;
 
   registrarTokenE2e(para, "VERIFICACION_CORREO", token);
 

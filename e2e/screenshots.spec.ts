@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { cabecerasTestUtils } from "./helpers/cabeceras-test-utils";
 import path from "node:path";
 
 const password = "Basti0n!2026x";
@@ -17,6 +18,7 @@ test("capturas de interfaz", async ({ page, request }, testInfo) => {
   // Verificar correo vía endpoint de test (habilitado con BASTION_E2E=1)
   await request.get(
     `/api/auth/test-utils?email=${encodeURIComponent(email)}&tipo=VERIFICACION_CORREO`,
+    { headers: cabecerasTestUtils() },
   );
 
   await page.goto("/");

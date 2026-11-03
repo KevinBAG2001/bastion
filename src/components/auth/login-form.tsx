@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 
 function esEstado2FA(state: EstadoLogin | undefined): state is {
   requires2FA: true;
-  pendingToken: string;
   email: string;
 } {
   return Boolean(state && "requires2FA" in state && state.requires2FA);
@@ -34,17 +33,14 @@ export function LoginForm({
     undefined,
   );
 
-  const fase2FA = esEstado2FA(state);
-
-  if (fase2FA) {
+  if (esEstado2FA(state)) {
     return (
       <form action={action2fa} className="space-y-4">
         <input type="hidden" name="callbackUrl" value={callbackUrl} />
-        <input type="hidden" name="email" value={state.email} />
-        <input type="hidden" name="pendingToken" value={state.pendingToken} />
         <p className="rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-sm text-blue-200">
-          Verificación en dos pasos activada. Ingresa el código de tu app autenticadora o un
-          código de respaldo.
+          Verificación en dos pasos activada para{" "}
+          <span className="font-medium">{state.email}</span>. Ingresa el código de tu app
+          autenticadora o un código de respaldo.
         </p>
         {state2fa?.error && (
           <p
@@ -66,7 +62,7 @@ export function LoginForm({
             autoComplete="one-time-code"
             required
             autoFocus
-            placeholder="000000 o xxxx-xxxx"
+            placeholder="000000 o xxxx-xxxx-xxxx-xxxx"
             className="w-full rounded-xl border border-card-border bg-background px-3 py-2.5 text-sm outline-none ring-accent focus:ring-2"
           />
         </div>
