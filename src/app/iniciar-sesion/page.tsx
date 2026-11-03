@@ -9,7 +9,12 @@ export const metadata: Metadata = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ callbackUrl?: string; registrado?: string; verificado?: string }>;
+  searchParams: Promise<{
+    callbackUrl?: string;
+    registrado?: string;
+    verificado?: string;
+    restablecido?: string;
+  }>;
 }) {
   const params = await searchParams;
   const callbackUrl = params.callbackUrl ?? "/panel";
@@ -23,6 +28,7 @@ export default async function LoginPage({
           callbackUrl={callbackUrl}
           registered={params.registrado === "1"}
           verified={params.verificado === "true"}
+          passwordReset={params.restablecido === "1"}
         />
       </div>
       <p className="mt-6 text-center text-sm text-muted">

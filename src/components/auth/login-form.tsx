@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import { loginWithCredentials } from "@/actions/auth";
 import { Button } from "@/components/ui/button";
@@ -8,10 +9,12 @@ export function LoginForm({
   callbackUrl,
   registered,
   verified,
+  passwordReset,
 }: {
   callbackUrl: string;
   registered?: boolean;
   verified?: boolean;
+  passwordReset?: boolean;
 }) {
   const [state, action, pending] = useActionState(loginWithCredentials, undefined);
 
@@ -26,6 +29,11 @@ export function LoginForm({
       {verified && (
         <p className="rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-green-200">
           Correo verificado correctamente. Ya puedes iniciar sesión.
+        </p>
+      )}
+      {passwordReset && (
+        <p className="rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-sm text-green-200">
+          Contraseña actualizada. Inicia sesión con tu nueva contraseña.
         </p>
       )}
       {state?.error && (
@@ -58,6 +66,11 @@ export function LoginForm({
           autoComplete="current-password"
           className="w-full rounded-xl border border-card-border bg-background px-3 py-2.5 text-sm outline-none ring-accent focus:ring-2"
         />
+        <p className="mt-2 text-right text-xs">
+          <Link href="/recuperar-contrasena" className="text-accent-soft hover:text-accent">
+            ¿Olvidaste tu contraseña?
+          </Link>
+        </p>
       </div>
       <Button type="submit" className="w-full" disabled={pending}>
         {pending ? "Entrando…" : "Iniciar sesión"}

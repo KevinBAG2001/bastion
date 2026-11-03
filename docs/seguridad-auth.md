@@ -289,6 +289,9 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 | `src/app/api/auth/recuperar-contrasena/route.ts` | Solicitar recuperación |
 | `src/app/api/auth/restablecer-contrasena/route.ts` | Restablecer contraseña |
 | `src/app/api/auth/cerrar-todas-sesiones/route.ts` | Cerrar todas las sesiones |
+| `src/app/recuperar-contrasena/page.tsx` | UI para solicitar enlace de recuperación |
+| `src/app/restablecer-contrasena/page.tsx` | UI para nueva contraseña con token |
+| `src/app/perfil/page.tsx` | Sección de seguridad (verificación, cerrar sesiones) |
 | `prisma/schema.prisma` | Modelos de BD (TokenVerificacion, IntentoLogin, EventoSeguridad) |
 
 ---
