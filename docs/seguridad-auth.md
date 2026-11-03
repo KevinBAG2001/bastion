@@ -331,6 +331,10 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 | `src/app/api/auth/recuperar-contrasena/route.ts` | Solicitar recuperación |
 | `src/app/api/auth/restablecer-contrasena/route.ts` | Restablecer contraseña |
 | `src/app/api/auth/cerrar-todas-sesiones/route.ts` | Cerrar todas las sesiones |
+| `src/app/recuperar-contrasena/page.tsx` | UI para solicitar enlace de recuperación |
+| `src/app/restablecer-contrasena/page.tsx` | UI para nueva contraseña con token |
+| `src/app/perfil/page.tsx` | Perfil con sección de seguridad de cuenta |
+| `src/app/perfil/seguridad/page.tsx` | Activación y gestión de 2FA (TOTP) |
 | `src/lib/totp-2fa.ts` | TOTP RFC 6238 y QR local |
 | `src/lib/cifrado-secreto.ts` | AES-GCM para secretos en reposo |
 | `src/lib/codigos-respaldo-2fa.ts` | Códigos de respaldo hasheados |
@@ -342,7 +346,7 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 ## Riesgos pendientes (fuera de este PR)
 
 1. **Adaptador de correo real:** Hoy se imprime en consola; en producción usar Resend/SES.
-3. **Rate limiting distribuido:** Si se escala a múltiples instancias, migrar a Redis/Upstash.
-4. **Limpieza de intentos antiguos:** Implementar cron para `limpiarIntentosAntiguos()`.
-5. **CAPTCHA:** No implementado; agregar como evolución con alternativa accesible.
-6. **Migración progresiva de bcrypt a Argon2id:** Los hashes legados se re-hashean al login.
+2. **Rate limiting distribuido:** Si se escala a múltiples instancias, migrar a Redis/Upstash.
+3. **Limpieza de intentos antiguos:** Implementar cron para `limpiarIntentosAntiguos()`.
+4. **CAPTCHA:** No implementado; agregar como evolución con alternativa accesible.
+5. **Migración progresiva de bcrypt a Argon2id:** Los hashes legados se re-hashean al login.
