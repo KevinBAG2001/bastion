@@ -22,7 +22,10 @@ export function SeguridadCuenta({
     setMessage(null);
     setLoading(true);
 
-    const res = await fetch("/api/auth/cerrar-todas-sesiones", { method: "POST" });
+    const res = await fetch("/api/auth/cerrar-todas-sesiones", {
+      method: "POST",
+      headers: { Origin: window.location.origin },
+    });
     const data = (await res.json()) as { error?: string; message?: string };
     setLoading(false);
 

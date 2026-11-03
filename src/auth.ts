@@ -120,7 +120,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user }) {
       // Login inicial: guardar sessionVersion en el token para rotación
       if (user) {
         token.sub = user.id;
@@ -129,21 +129,27 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         token.sessionVersion = (user as { sessionVersion?: number }).sessionVersion ?? 0;
       }
 
-      // En cada refresco del token, verificar que la sesión sigue siendo válida
-      if (trigger === "update" && token.sub) {
+      // Lección C1: comparar sessionVersion en cada auth(), no solo en trigger "update".
+      // Así un JWT robado deja de servir en cuanto el usuario cierra sesiones o cambia contraseña.
+      if (token.sub) {
         const fresh = await prisma.user.findUnique({
           where: { id: token.sub },
           select: { xp: true, level: true, name: true, sessionVersion: true },
         });
-        if (fresh) {
-          // Si sessionVersion cambió, invalidar la sesión (CWE-613)
-          if (fresh.sessionVersion !== token.sessionVersion) {
-            return { ...token, sub: undefined };
-          }
-          token.xp = fresh.xp;
-          token.level = fresh.level;
-          token.name = fresh.name;
+
+        if (!fresh || fresh.sessionVersion !== (token.sessionVersion ?? -1)) {
+          token.sub = undefined;
+          token.xp = undefined;
+          token.level = undefined;
+          token.name = undefined;
+          token.sessionVersion = undefined;
+          return token;
         }
+
+        token.xp = fresh.xp;
+        token.level = fresh.level;
+        token.name = fresh.name;
+        token.sessionVersion = fresh.sessionVersion;
       }
       return token;
     },

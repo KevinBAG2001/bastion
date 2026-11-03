@@ -3,9 +3,13 @@
  */
 
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { obtenerSesionAutenticada, respuestaSesionRevocada } from "@/lib/sesion-valida";
 import { prisma } from "@/lib/prisma";
 import { verificarOrigenCSRF } from "@/lib/csrf";
+import {
+  rechazarSiSetup2FABloqueado,
+  registrarIntentoSetup2FA,
+} from "@/lib/setup-2fa-limits";
 import { confirmarActivacion2FASchema } from "@/lib/validations";
 import { verificarSegundoFactor } from "@/lib/verificar-segundo-factor";
 import { regenerarCodigosRespaldo } from "@/lib/codigos-respaldo-2fa";
@@ -16,9 +20,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Solicitud no autorizada." }, { status: 403 });
   }
 
-  const session = await auth();
+  const session = await obtenerSesionAutenticada();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "No autenticado." }, { status: 401 });
+    return respuestaSesionRevocada();
+  }
+
+  const bloqueo = await rechazarSiSetup2FABloqueado(session.user.id);
+  if (bloqueo) {
+    return bloqueo;
   }
 
   let body: unknown;
@@ -52,6 +61,7 @@ export async function POST(request: Request) {
     evitarReplay: false,
   });
   if (!segundoFactor.valido || segundoFactor.tipo !== "totp") {
+    await registrarIntentoSetup2FA(session.user.id, false);
     return NextResponse.json({ error: "Código TOTP incorrecto." }, { status: 400 });
   }
 
@@ -63,6 +73,8 @@ export async function POST(request: Request) {
     modulo: "2fa",
     resultado: "exito",
   });
+
+  await registrarIntentoSetup2FA(session.user.id, true);
 
   return NextResponse.json({ codigosRespaldo });
 }

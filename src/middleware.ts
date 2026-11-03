@@ -4,14 +4,8 @@
  * Importa auth.config.ts (Edge-compatible, sin Prisma ni node:crypto)
  * en lugar de auth.ts para evitar avisos de Edge Runtime.
  *
- * ¿Qué ataques evitan los encabezados?
- * - X-Content-Type-Options: nosniff → evita MIME sniffing (CWE-430).
- * - X-Frame-Options: DENY → evita clickjacking (CWE-1021).
- * - Referrer-Policy: strict-origin-when-cross-origin → limita fuga de URLs (CWE-200).
- * - Permissions-Policy → desactiva APIs innecesarias (cámara, micrófono, geolocalización).
- * - Strict-Transport-Security → fuerza HTTPS tras la primera visita (CWE-319).
- * - Content-Security-Policy → restringe orígenes de scripts, estilos e imágenes (CWE-79).
- *   Usa nonce para scripts inline de Next.js.
+ * Lección C1: el Edge no puede leer sessionVersion en PostgreSQL; si hay cookie JWT,
+ * delegamos en /api/auth/comprobar-sesion (Node) y borramos la cookie si fue revocada.
  */
 
 import NextAuth from "next-auth";
@@ -21,14 +15,57 @@ import { NextResponse } from "next/server";
 const { auth } = NextAuth(authConfig);
 
 const protectedPrefixes = ["/panel", "/cursos", "/perfil"];
+const protectedApiPaths = ["/api/auth/2fa/", "/api/auth/cerrar-todas-sesiones"];
 
-export default auth((req) => {
+const nombreCookieSesion =
+  process.env.NODE_ENV === "production"
+    ? "__Secure-authjs.session-token"
+    : "authjs.session-token";
+
+function esRutaProtegida(pathname: string): boolean {
+  if (protectedPrefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+    return true;
+  }
+  if (pathname === "/api/auth/cerrar-todas-sesiones") {
+    return true;
+  }
+  return protectedApiPaths.some((p) => pathname.startsWith(p));
+}
+
+async function sesionSigueValida(req: Request, origin: string): Promise<boolean> {
+  if (pathnameEsComprobacion(new URL(req.url).pathname)) {
+    return true;
+  }
+
+  const checkUrl = new URL("/api/auth/comprobar-sesion", origin);
+  try {
+    const respuesta = await fetch(checkUrl, {
+      headers: { cookie: req.headers.get("cookie") ?? "" },
+    });
+    return respuesta.ok;
+  } catch {
+    return false;
+  }
+}
+
+function pathnameEsComprobacion(pathname: string): boolean {
+  return pathname === "/api/auth/comprobar-sesion";
+}
+
+function borrarCookieSesion(respuesta: NextResponse): void {
+  respuesta.cookies.set(nombreCookieSesion, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 0,
+  });
+}
+
+export default auth(async (req) => {
   const { pathname } = req.nextUrl;
 
-  // --- Protección de rutas ---
-  const isProtected = protectedPrefixes.some(
-    (p) => pathname === p || pathname.startsWith(`${p}/`),
-  );
+  const isProtected = esRutaProtegida(pathname);
 
   if (isProtected && !req.auth) {
     const login = new URL("/iniciar-sesion", req.nextUrl.origin);
@@ -36,28 +73,47 @@ export default auth((req) => {
     return NextResponse.redirect(login);
   }
 
+  if (isProtected && req.auth) {
+    const valida = await sesionSigueValida(req, req.nextUrl.origin);
+    if (!valida) {
+      if (pathname.startsWith("/api/")) {
+        const respuesta = NextResponse.json(
+          { error: "Sesión revocada o expirada." },
+          { status: 401 },
+        );
+        borrarCookieSesion(respuesta);
+        return respuesta;
+      }
+      const login = new URL("/iniciar-sesion", req.nextUrl.origin);
+      login.searchParams.set("sesion", "revocada");
+      const respuesta = NextResponse.redirect(login);
+      borrarCookieSesion(respuesta);
+      return respuesta;
+    }
+  }
+
   if (
     req.auth &&
     (pathname === "/iniciar-sesion" || pathname === "/registro")
   ) {
-    return NextResponse.redirect(new URL("/panel", req.nextUrl.origin));
+    const valida = await sesionSigueValida(req, req.nextUrl.origin);
+    if (valida) {
+      return NextResponse.redirect(new URL("/panel", req.nextUrl.origin));
+    }
+    const respuesta = NextResponse.next();
+    borrarCookieSesion(respuesta);
+    return respuesta;
   }
 
   // --- Encabezados de seguridad ---
   const response = NextResponse.next();
-  // CSP estricta. Next.js inyecta scripts inline que requieren 'unsafe-inline'
-  // o un nonce coordinado con el framework. Usamos 'unsafe-inline' como fallback
-  // junto con 'strict-dynamic' cuando se integre nonce nativo de Next.js (evolución).
-  // Austria: CSP sin nonce porque Next.js 16 no expone aún una API estable para
-  // pasar el nonce a todos los scripts inline del framework; si se agrega, migrar
-  // a script-src 'nonce-...' 'strict-dynamic' y quitar 'unsafe-inline'.
   const csp = [
     `default-src 'self'`,
     `script-src 'self' 'unsafe-inline'`,
-    `style-src 'self' 'unsafe-inline'`, // Tailwind CSS usa estilos inline
+    `style-src 'self' 'unsafe-inline'`,
     `img-src 'self' data:`,
     `font-src 'self'`,
-    `connect-src 'self' https://api.pwnedpasswords.com`, // HIBP API
+    `connect-src 'self' https://api.pwnedpasswords.com`,
     `frame-ancestors 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,
@@ -72,7 +128,6 @@ export default auth((req) => {
     "camera=(), microphone=(), geolocation=(), payment=()",
   );
 
-  // HSTS solo en producción (no en desarrollo HTTP)
   if (process.env.NODE_ENV === "production") {
     response.headers.set(
       "Strict-Transport-Security",
@@ -90,7 +145,9 @@ export const config = {
     "/perfil/:path*",
     "/iniciar-sesion",
     "/registro",
-    // Incluir rutas de API para encabezados de seguridad
+    "/api/auth/2fa/:path*",
+    "/api/auth/cerrar-todas-sesiones",
+    "/api/auth/comprobar-sesion",
     "/api/:path*",
   ],
 };
