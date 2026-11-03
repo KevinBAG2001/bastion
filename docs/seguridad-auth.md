@@ -73,6 +73,12 @@ filtraciones de datos conocidas usando la API de Have I Been Pwned.
 **Tolerancia a fallos:** Si HIBP no responde (red caída), el registro se permite
 con una advertencia en la bitácora. La seguridad no bloquea la funcionalidad.
 
+**CodeQL (`js/insufficient-password-hash`):** No excluimos esta regla de forma global
+en el repositorio. Ocultarla en todo el proyecto impediría detectar hashes débiles
+reales en código nuevo. El único SHA-1 sobre contraseñas está en `hibp.ts` y está
+documentado con comentario de supresión en línea, porque la API de HIBP exige ese
+algoritmo para la consulta k-anonymity, no para persistir credenciales.
+
 ---
 
 ## 3. Límite de intentos de login
