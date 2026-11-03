@@ -16,6 +16,7 @@ import type { TipoToken } from "@prisma/client";
 const CADUCIDAD_MS: Record<TipoToken, number> = {
   VERIFICACION_CORREO: 24 * 60 * 60 * 1000,     // 24 horas
   RECUPERACION_CONTRASENA: 30 * 60 * 1000,       // 30 minutos
+  LOGIN_PENDIENTE_2FA: 5 * 60 * 1000,             // 5 minutos
 };
 
 /**

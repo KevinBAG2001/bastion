@@ -19,6 +19,7 @@ defaults:
 env:
   DATABASE_URL: postgresql://bastion:bastion_ci@localhost:5432/bastion?schema=public
   AUTH_SECRET: ci-auth-secret-change-in-production-min-32-chars
+  TOTP_ENCRYPTION_KEY: CfRbxdD927y7eqa7gl5lL6OAsf/ZFshhumgo9G8nE6w=
   AUTH_URL: http://127.0.0.1:3000
   NEXTAUTH_URL: http://127.0.0.1:3000
   PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000

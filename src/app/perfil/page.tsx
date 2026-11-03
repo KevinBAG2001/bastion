@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { auth } from "@/auth";
 import { levelProgress, xpForLevel, xpToNextLevel } from "@/lib/gamification";
 import { prisma } from "@/lib/prisma";
@@ -49,6 +50,15 @@ export default async function ProfilePage() {
             {xpToNextLevel(user.xp)} XP para nivel {user.level + 1} ({nextLevelXp} XP)
           </p>
         </div>
+      </section>
+
+      <section className="mt-8">
+        <Link
+          href="/perfil/seguridad"
+          className="inline-flex rounded-xl border border-card-border bg-card/40 px-4 py-3 text-sm font-medium hover:border-accent/50"
+        >
+          Verificación en dos pasos y seguridad →
+        </Link>
       </section>
 
       <section className="mt-10">
