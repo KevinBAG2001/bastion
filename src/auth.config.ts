@@ -31,6 +31,12 @@ const authConfig: NextAuthConfig = {
   pages: {
     signIn: "/iniciar-sesion",
   },
+  /**
+   * B2 — trustHost: Auth.js acepta el host de la petición (Host / X-Forwarded-Host).
+   * Necesario detrás de reverse proxies y en despliegues PaaS sin lista fija de hosts.
+   * Riesgo: si no fijas AUTH_URL en producción, URLs de callback pueden desalinearse.
+   * Mitigación: `src/lib/validar-config-auth.ts` exige AUTH_URL al arrancar en producción.
+   */
   trustHost: true,
 };
 

@@ -17,6 +17,7 @@
 10. [Mensajes genéricos y tiempo constante](#10-mensajes-genéricos-y-tiempo-constante)
 11. [Verificación en dos pasos (TOTP)](#11-verificación-en-dos-pasos-totp)
 12. [IP del cliente y proxies de confianza](#12-ip-del-cliente-y-proxies-de-confianza)
+13. [Hallazgos de auditoría (M6, A4, B1–B4, M5)](#13-hallazgos-de-auditoría-m6-a4-b1b4-m5)
 
 ---
 
@@ -157,7 +158,11 @@ El usuario debe hacer clic en el enlace para activar su cuenta.
 - Un solo uso: se marca como "usado" inmediatamente.
 
 **Adaptador de correo:** En desarrollo, los correos se imprimen en la consola
-del servidor. En producción, cambiar por Resend, SES u otro servicio.
+del servidor (costo cero). En producción, cambiar por Resend, SES u otro servicio.
+Ver [A4 — logs y secretos](#a4--adaptador-de-consola-y-logs-cwe-532).
+
+**Enlace de verificación:** Apunta a `/verificar-correo?token=…` (POST desde la
+página) en lugar de consumir el token solo por GET en la API. Ver [B4](#b4--verificación-de-correo-y-referrer).
 
 ---
 
@@ -189,7 +194,10 @@ tu navegador envíe solicitudes a Bastion sin tu consentimiento.
   o inscribirte en cursos sin que lo sepas.
 
 **¿Cómo funciona?**
-- Los Route Handlers verifican que el encabezado `Origin` coincida con el host.
+- Los Route Handlers **POST/PUT/DELETE** autenticados o sensibles verifican que el
+  encabezado `Origin` (o `Referer`) coincida con el host — incluidos
+  `cerrar-todas-sesiones`, `register`, recuperación y todas las rutas `2fa/*`
+  (B3).
 - Las Server Actions de Next.js tienen protección CSRF automática.
 - Auth.js gestiona su propio token CSRF para `/api/auth/*`.
 
@@ -211,8 +219,13 @@ contenido de forma segura.
 | `Permissions-Policy` | Acceso no autorizado a cámara, micrófono, etc. |
 | `Strict-Transport-Security` | Downgrade a HTTP (CWE-319) |
 
-**CSP con nonce:** Se genera un nonce criptográfico aleatorio en cada solicitud.
-Solo los scripts con ese nonce pueden ejecutarse, bloqueando scripts inyectados.
+**CSP y `unsafe-inline` (M5):** Hoy `script-src` incluye `'unsafe-inline'` porque
+Next.js 16 inyecta scripts de hidratación inline y Tailwind usa estilos inline.
+Probar nonces con la API de Next (`nonce` en middleware + layout) rompió la carga
+de la app en este monolito educativo. **Riesgo pendiente:** un XSS que escape el
+escape de React podría ejecutar script inline; la mitigación principal sigue siendo
+no insertar HTML crudo de usuarios. Cuando el proyecto migre a un despliegue con
+CSP estricto, revisar la guía oficial de Next.js para nonces en App Router.
 
 ---
 
@@ -285,6 +298,7 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 **Rate limit de configuración (M2):** las rutas `POST /api/auth/2fa/*` aplican `verificarLimite` con llave `2fa:setup:<userId>`.
 
 **Desactivación:** Requiere contraseña **y** código TOTP (no se aceptan códigos de respaldo para desactivar, para evitar que quien robe un respaldo desactive tu 2FA).
+Si falla cualquiera de los dos, la API responde con **un solo mensaje genérico** (B1 / CWE-203).
 
 **Clave de cifrado:** Genera `TOTP_ENCRYPTION_KEY` con `openssl rand -base64 32` (32 bytes aleatorios). Documentada en `.env.example`; nunca la subas al repositorio.
 
@@ -314,6 +328,67 @@ en rate limiting, tanto en Route Handlers como en Server Actions (`headers()`).
 
 **Prueba unitaria:** `src/lib/ip-cliente.test.ts` verifica que un
 `X-Forwarded-For` inventado no cambia la llave cuando no hay proxy de confianza.
+
+---
+
+## 13. Hallazgos de auditoría (M6, A4, B1–B4, M5)
+
+### M6 — Endpoint `test-utils` en build de producción
+
+**Archivos:** `src/app/api/auth/test-utils/route.ts`, `src/lib/test-utils-e2e.ts`
+
+El código del endpoint viaja en el bundle aunque solo se use en pruebas. Condiciones:
+
+| Entorno | Requisitos |
+|:--|:--|
+| Desarrollo | `BASTION_E2E=1` |
+| Producción (CI: `pnpm build` + `pnpm start`) | `BASTION_E2E=1` **y** `BASTION_E2E_SECRET` **y** cabecera `x-bastion-e2e-secret` |
+
+El secreto se genera en `.github/workflows/ci.yml` con `openssl rand`; no hay valores en el repo.
+
+**Prueba unitaria:** `src/lib/test-utils-e2e.test.ts`
+
+### A4 — Adaptador de consola y logs (CWE-532)
+
+**Archivo:** `src/lib/correo.ts`
+
+En local el adaptador imprime el correo completo para aprender. En `NODE_ENV=production`:
+
+- Los tokens en URLs se reemplazan por `[REDACTADO]` antes de `console.log`.
+- Se emite una **advertencia fuerte** la primera vez (sustituir por correo real antes de un despliegue público).
+
+**Riesgo:** Los agregadores de logs retienen datos años; un `?token=` en claro equivale a filtrar credenciales.
+
+**Prueba unitaria:** `src/lib/correo.test.ts`
+
+### B1 — Mensaje genérico al desactivar 2FA
+
+**Archivo:** `src/app/api/auth/2fa/desactivar/route.ts`
+
+No distinguir “contraseña incorrecta” vs “TOTP incorrecto” evita que un atacante pruebe factores por separado.
+
+### B2 — `trustHost: true`
+
+**Archivos:** `src/auth.config.ts`, `src/lib/validar-config-auth.ts`
+
+`trustHost` permite que Auth.js confíe en el host de la petición (proxies, PaaS). En producción **`AUTH_URL` es obligatorio** al arrancar; si falta, el proceso falla con un error claro. Documentado en `.env.example`.
+
+### B3 — CSRF en mutaciones autenticadas
+
+**Archivo:** `src/lib/csrf.ts` y cada Route Handler POST bajo `src/app/api/auth/`
+
+Auditoría: `register`, `recuperar-contrasena`, `restablecer-contrasena`, `cerrar-todas-sesiones` y las cuatro rutas `2fa/*` llaman a `verificarOrigenCSRF` al inicio.
+
+### B4 — Verificación de correo y Referer
+
+**Archivos:** `src/app/verificar-correo/*`, `src/app/api/auth/verificar-correo/route.ts`, `src/middleware.ts`
+
+- Enlace del correo → `/verificar-correo?token=…` → la página quita el token de la URL (`history.replaceState`) y confirma con **POST** (CSRF por Origin).
+- GET legacy en la API sigue funcionando para enlaces antiguos, con `Referrer-Policy: no-referrer` y redirección a login **sin** token en la query.
+
+### M5 — CSP `unsafe-inline`
+
+Documentado en [sección 8](#8-encabezados-de-seguridad-y-csp). Nonces evaluados; no aplicados para no romper Next.js + Tailwind en este repo educativo.
 
 ---
 
@@ -395,10 +470,11 @@ en rate limiting, tanto en Route Handlers como en Server Actions (`headers()`).
 
 ---
 
-## Riesgos pendientes (fuera de este PR)
+## Riesgos pendientes
 
-1. **Adaptador de correo real:** Hoy se imprime en consola; en producción usar Resend/SES.
-2. **Rate limiting distribuido:** Si se escala a múltiples instancias, migrar a Redis/Upstash.
-3. **Limpieza de intentos antiguos:** Implementar cron para `limpiarIntentosAntiguos()`.
-4. **CAPTCHA:** No implementado; agregar como evolución con alternativa accesible.
-5. **Migración progresiva de bcrypt a Argon2id:** Los hashes legados se re-hashean al login.
+1. **Adaptador de correo real:** Hoy se imprime en consola; en producción usar Resend/SES (A4 mitiga logs, no sustituye el envío real).
+2. **CSP sin `unsafe-inline` (M5):** Requiere nonces alineados con Next.js 16 y Tailwind v4.
+3. **Rate limiting distribuido:** Si se escala a múltiples instancias, migrar a Redis/Upstash.
+4. **Limpieza de intentos antiguos:** Implementar cron para `limpiarIntentosAntiguos()`.
+5. **CAPTCHA:** No implementado; agregar como evolución con alternativa accesible.
+6. **Migración progresiva de bcrypt a Argon2id:** Los hashes legados se re-hashean al login.

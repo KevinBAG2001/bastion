@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { cabecerasTestUtils } from "./helpers/cabeceras-test-utils";
 
 const email = `2fa-${Date.now()}@ejemplo.test`;
 const password = "Basti0n!2026x";
@@ -14,6 +15,7 @@ test.describe("Verificación en dos pasos (TOTP)", () => {
 
     const verificacion = await request.get(
       `/api/auth/test-utils?email=${encodeURIComponent(email)}&tipo=VERIFICACION_CORREO`,
+      { headers: cabecerasTestUtils() },
     );
     expect(verificacion.ok()).toBeTruthy();
 
@@ -29,6 +31,7 @@ test.describe("Verificación en dos pasos (TOTP)", () => {
 
     const totpResp = await request.get(
       `/api/auth/test-utils?email=${encodeURIComponent(email)}&accion=totp-generar`,
+      { headers: cabecerasTestUtils() },
     );
     expect(totpResp.ok()).toBeTruthy();
     const { token } = await totpResp.json();
@@ -47,6 +50,7 @@ test.describe("Verificación en dos pasos (TOTP)", () => {
 
     const totpLogin = await request.get(
       `/api/auth/test-utils?email=${encodeURIComponent(email)}&accion=totp-generar`,
+      { headers: cabecerasTestUtils() },
     );
     const { token: tokenLogin } = await totpLogin.json();
     await page.getByLabel("Código de verificación").fill(tokenLogin);
@@ -56,6 +60,7 @@ test.describe("Verificación en dos pasos (TOTP)", () => {
     await page.goto("/perfil/seguridad");
     const totpOff = await request.get(
       `/api/auth/test-utils?email=${encodeURIComponent(email)}&accion=totp-generar`,
+      { headers: cabecerasTestUtils() },
     );
     const { token: tokenOff } = await totpOff.json();
     await page.getByPlaceholder("Contraseña para desactivar").fill(password);

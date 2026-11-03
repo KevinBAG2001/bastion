@@ -1,9 +1,11 @@
 /**
- * Endpoint auxiliar habilitado SOLO con BASTION_E2E=1.
- * Permite a las pruebas e2e obtener tokens de verificación/recuperación,
- * verificar correo automáticamente y generar códigos TOTP de prueba.
+ * Endpoint auxiliar para pruebas e2e (M6).
  *
- * En producción este endpoint NO existe (devuelve 404).
+ * Lección: el archivo viaja en el build de producción; no basta ocultarlo con un flag.
+ * - BASTION_E2E=1 habilita el endpoint en desarrollo.
+ * - Con NODE_ENV=production (p. ej. `pnpm start` en CI) además exige BASTION_E2E_SECRET
+ *   y la cabecera x-bastion-e2e-secret — generados en el workflow, nunca en el repo.
+ * - Sin esas condiciones → 404 (misma respuesta que si no existiera).
  */
 
 import { NextResponse } from "next/server";
@@ -11,10 +13,11 @@ import { generateSync } from "otplib";
 import { prisma } from "@/lib/prisma";
 import { descifrarSecretoTotp } from "@/lib/totp-2fa";
 import { obtenerTokenE2e } from "@/lib/correo";
+import { testUtilsE2ePermitido } from "@/lib/test-utils-e2e";
 import type { TipoToken } from "@prisma/client";
 
 export async function GET(request: Request) {
-  if (process.env.BASTION_E2E !== "1") {
+  if (!testUtilsE2ePermitido(request)) {
     return NextResponse.json({ error: "No disponible." }, { status: 404 });
   }
 

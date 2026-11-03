@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { cabecerasTestUtils } from "./helpers/cabeceras-test-utils";
 
 const email = `sesion-${Date.now()}@ejemplo.test`;
 const password = "Basti0n!2026x";
@@ -20,6 +21,7 @@ test.describe("Invalidación de sessionVersion (C1)", () => {
 
     const verificacion = await request.get(
       `${origin}/api/auth/test-utils?email=${encodeURIComponent(email)}&tipo=VERIFICACION_CORREO`,
+      { headers: cabecerasTestUtils() },
     );
     expect(verificacion.ok()).toBeTruthy();
 

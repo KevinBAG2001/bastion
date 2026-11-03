@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { cabecerasTestUtils } from "./helpers/cabeceras-test-utils";
 
 const password = "Basti0n!2026x";
 const newPassword = "NuevaBasti0n!2027y";
@@ -15,6 +16,7 @@ test.describe("Recuperación de contraseña", () => {
 
     const verificacion = await request.get(
       `/api/auth/test-utils?email=${encodeURIComponent(email)}&tipo=VERIFICACION_CORREO`,
+      { headers: cabecerasTestUtils() },
     );
     expect(verificacion.ok()).toBeTruthy();
 
@@ -25,6 +27,7 @@ test.describe("Recuperación de contraseña", () => {
 
     const tokenRes = await request.get(
       `/api/auth/test-utils?email=${encodeURIComponent(email)}&tipo=RECUPERACION_CONTRASENA&accion=token`,
+      { headers: cabecerasTestUtils() },
     );
     expect(tokenRes.ok()).toBeTruthy();
     const { token } = (await tokenRes.json()) as { token: string };
