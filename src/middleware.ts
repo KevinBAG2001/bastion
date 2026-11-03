@@ -107,6 +107,10 @@ export default auth(async (req) => {
 
   // --- Encabezados de seguridad ---
   const response = NextResponse.next();
+
+  // M5: Next.js 16 inyecta scripts inline de hidratación y chunks; quitar 'unsafe-inline'
+  // exige nonces en cada <Script> y alinear Tailwind — hoy rompe la app en pruebas locales.
+  // Riesgo pendiente documentado en docs/seguridad-auth.md (XSS vía HTML estático sigue mitigado por React).
   const csp = [
     `default-src 'self'`,
     `script-src 'self' 'unsafe-inline'`,
@@ -122,7 +126,12 @@ export default auth(async (req) => {
   response.headers.set("Content-Security-Policy", csp);
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");
-  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  const referrerEstricto =
+    pathname === "/verificar-correo" || pathname === "/api/auth/verificar-correo";
+  response.headers.set(
+    "Referrer-Policy",
+    referrerEstricto ? "no-referrer" : "strict-origin-when-cross-origin",
+  );
   response.headers.set(
     "Permissions-Policy",
     "camera=(), microphone=(), geolocation=(), payment=()",
@@ -145,9 +154,11 @@ export const config = {
     "/perfil/:path*",
     "/iniciar-sesion",
     "/registro",
+    "/verificar-correo",
     "/api/auth/2fa/:path*",
     "/api/auth/cerrar-todas-sesiones",
     "/api/auth/comprobar-sesion",
+    "/api/auth/verificar-correo",
     "/api/:path*",
   ],
 };

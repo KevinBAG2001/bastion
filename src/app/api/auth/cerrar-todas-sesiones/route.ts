@@ -19,6 +19,7 @@ import {
 import { ipClienteDesdeRequest } from "@/lib/ip-cliente";
 
 export async function POST(request: Request) {
+  // B3: toda mutación autenticada por Route Handler exige Origin/Referer legítimo (CWE-352).
   if (!verificarOrigenCSRF(request)) {
     return NextResponse.json({ error: "Solicitud no autorizada." }, { status: 403 });
   }

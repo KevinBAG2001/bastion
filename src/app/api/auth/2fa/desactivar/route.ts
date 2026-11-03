@@ -57,10 +57,14 @@ export async function POST(request: Request) {
     );
   }
 
+  // B1: un solo mensaje genérico — no revelar si falló la contraseña o el TOTP (CWE-203).
+  const mensajeRechazo =
+    "No se pudo desactivar la verificación en dos pasos. Comprueba tu contraseña y un código TOTP válido (no se aceptan códigos de respaldo).";
+
   const credenciales = await verificarCredenciales(user.email, parsed.data.password);
   if (!credenciales) {
     await registrarIntentoSetup2FA(session.user.id, false);
-    return NextResponse.json({ error: "Contraseña incorrecta." }, { status: 400 });
+    return NextResponse.json({ error: mensajeRechazo }, { status: 400 });
   }
 
   const segundoFactor = await verificarSegundoFactor(session.user.id, parsed.data.codigo, {
@@ -68,10 +72,7 @@ export async function POST(request: Request) {
   });
   if (!segundoFactor.valido || segundoFactor.tipo !== "totp") {
     await registrarIntentoSetup2FA(session.user.id, false);
-    return NextResponse.json(
-      { error: "Código TOTP incorrecto. Los códigos de respaldo no aplican aquí." },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: mensajeRechazo }, { status: 400 });
   }
 
   await prisma.$transaction([

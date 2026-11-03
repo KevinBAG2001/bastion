@@ -134,8 +134,11 @@ jobs:
       - name: Instalar navegadores Playwright
         run: pnpm exec playwright install chromium --with-deps
 
+      - name: Generar secreto e2e (solo en este job, M6)
+        run: echo "BASTION_E2E_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
       - name: Iniciar servidor
-        run: BASTION_DISABLE_RATE_LIMIT=1 BASTION_E2E=1 pnpm start &
+        run: BASTION_DISABLE_RATE_LIMIT=1 BASTION_E2E=1 BASTION_E2E_SECRET="$BASTION_E2E_SECRET" pnpm start &
 
       - name: Esperar servidor
         run: |
@@ -147,6 +150,8 @@ jobs:
           exit 1
 
       - name: Ejecutar e2e
+        env:
+          BASTION_E2E_SECRET: ${{ env.BASTION_E2E_SECRET }}
         run: pnpm test:e2e
 
       - name: Subir capturas de pantalla

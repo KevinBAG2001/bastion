@@ -12,6 +12,7 @@
  * - Tiempo de respuesta constante razonable para no revelar existencia de cuentas (CWE-203).
  */
 
+import "@/lib/validar-config-auth";
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
