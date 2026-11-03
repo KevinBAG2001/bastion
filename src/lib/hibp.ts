@@ -38,7 +38,11 @@ async function prefijoSufijoHibp(contrasena: string): Promise<{
   sufijo: string;
 }> {
   const bytes = new TextEncoder().encode(contrasena);
-  // codeql[js/insufficient-password-hash]: digest efímero solo para prefijo HIBP (k-anonymity), no almacenamiento.
+  // Lección de seguridad: SHA-1 no debe usarse para almacenar contraseñas (en Bastion
+  // usamos Argon2id). Aquí SHA-1 es obligatorio por el protocolo k-anonymity de HIBP:
+  // calculamos un digest efímero con Web Crypto, enviamos solo 5 hex del prefijo y
+  // descartamos el resto; nunca persistimos este hash.
+  // codeql[js/insufficient-password-hash]: uso legítimo documentado arriba, no almacenamiento.
   const digest = await crypto.subtle.digest("SHA-1", bytes);
   const hex = Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, "0"))
