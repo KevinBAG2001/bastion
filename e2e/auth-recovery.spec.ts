@@ -1,14 +1,17 @@
 import { expect, test } from "@playwright/test";
 
-const email = `recuperacion-${Date.now()}@ejemplo.test`;
 const password = "Basti0n!2026x";
 const newPassword = "NuevaBasti0n!2027y";
 
 test.describe("Recuperación de contraseña", () => {
   test("solicitud → enlace → nueva contraseña → login", async ({ page, request }) => {
-    await request.post("/api/auth/register", {
+    const email = `recuperacion-${Date.now()}@ejemplo.test`;
+
+    const registro = await request.post("/api/auth/register", {
       data: { name: "Recuperación Prueba", email, password },
+      headers: { origin: "http://127.0.0.1:3000" },
     });
+    expect(registro.ok()).toBeTruthy();
 
     const verificacion = await request.get(
       `/api/auth/test-utils?email=${encodeURIComponent(email)}&tipo=VERIFICACION_CORREO`,
