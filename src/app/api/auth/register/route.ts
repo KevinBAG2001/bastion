@@ -23,6 +23,7 @@ import { generarToken } from "@/lib/tokens";
 import { enviarCorreoVerificacion } from "@/lib/correo";
 import { verificarOrigenCSRF } from "@/lib/csrf";
 import { registrarEvento, redactarCorreo } from "@/lib/bitacora-seguridad";
+import { ipClienteDesdeRequest } from "@/lib/ip-cliente";
 
 export async function POST(request: Request) {
   // Verificación CSRF: el Origin debe coincidir con el host de la app
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
       accion: "csrf_rechazado",
       modulo: "registro",
       resultado: "bloqueado",
-      ip: obtenerIP(request),
+      ip: ipClienteDesdeRequest(request),
     });
     return NextResponse.json(
       { error: "Solicitud no autorizada." },
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const ip = obtenerIP(request);
+  const ip = ipClienteDesdeRequest(request);
 
   // Límite de intentos por IP (bloqueo progresivo en PostgreSQL)
   const limite = await verificarLimite(`ip:${ip}`);
@@ -147,11 +148,5 @@ export async function POST(request: Request) {
         "Si el correo es válido, recibirás un enlace de verificación. Revisa tu bandeja de entrada.",
     },
     { status: 201 },
-  );
-}
-
-function obtenerIP(request: Request): string {
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown"
   );
 }

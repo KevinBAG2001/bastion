@@ -16,6 +16,7 @@ import {
   obtenerSesionAutenticada,
   respuestaSesionRevocada,
 } from "@/lib/sesion-valida";
+import { ipClienteDesdeRequest } from "@/lib/ip-cliente";
 
 export async function POST(request: Request) {
   if (!verificarOrigenCSRF(request)) {
@@ -32,8 +33,7 @@ export async function POST(request: Request) {
     data: { sessionVersion: { increment: 1 } },
   });
 
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = ipClienteDesdeRequest(request);
 
   await registrarEvento({
     userId: session.user.id,

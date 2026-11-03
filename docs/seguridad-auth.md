@@ -16,6 +16,7 @@
 9. [Bitácora de eventos de seguridad](#9-bitácora-de-eventos-de-seguridad)
 10. [Mensajes genéricos y tiempo constante](#10-mensajes-genéricos-y-tiempo-constante)
 11. [Verificación en dos pasos (TOTP)](#11-verificación-en-dos-pasos-totp)
+12. [IP del cliente y proxies de confianza](#12-ip-del-cliente-y-proxies-de-confianza)
 
 ---
 
@@ -105,6 +106,14 @@ temporalmente con tiempos progresivos.
 **¿Por qué PostgreSQL y no Redis?** Bastion es un monolito de aprendizaje con
 una sola instancia. PostgreSQL ya está disponible y los intentos se consultan
 con un índice optimizado. Si se escala a múltiples instancias, migrar a Redis.
+
+**Llaves usadas:**
+- Login (Server Action `src/actions/auth.ts`): `ip:<cliente>` y `cuenta:<email>`.
+- Segunda fase 2FA: `2fa:ip:<cliente>` y `2fa:cuenta:<userId>`.
+- Registro y recuperación (Route Handlers): `ip:<cliente>`.
+
+La IP proviene de `src/lib/ip-cliente.ts` (no del primer valor crudo de
+`X-Forwarded-For`). Ver [sección 12](#12-ip-del-cliente-y-proxies-de-confianza).
 
 ---
 
@@ -222,6 +231,8 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 - NUNCA se registran contraseñas, hashes, tokens ni cookies.
 - Los correos se redactan parcialmente: `kevin@gmail.com` → `k***@g***.c***`.
 - Se registra la acción, el resultado y la IP (para correlacionar ataques).
+- La IP proviene de `ip-cliente.ts` (antes el login por Server Action guardaba
+  el literal `server-action`, inútil para forense).
 
 ---
 
@@ -237,8 +248,12 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 **¿Cómo lo resolvemos?**
 - El mensaje de error de login siempre dice "Correo o contraseña incorrectos."
 - En registro y recuperación, siempre dice "Si el correo es válido, recibirás..."
-- Cuando el usuario no existe, se ejecuta un hash Argon2id dummy para igualar
-  el tiempo de respuesta.
+- En **registro**, si el correo ya existe, se ejecuta un hash Argon2id dummy
+  antes de responder (mismo costo que crear la cuenta).
+- En **recuperación de contraseña**, siempre se lanza un hash Argon2id en
+  paralelo a la búsqueda del usuario; si hay cuenta, además se genera el token.
+  Un piso mínimo de latencia (`tiempo-respuesta-constante.ts`) dificulta medir
+  diferencias finas entre ambos caminos.
 
 ---
 
@@ -272,6 +287,33 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 **Desactivación:** Requiere contraseña **y** código TOTP (no se aceptan códigos de respaldo para desactivar, para evitar que quien robe un respaldo desactive tu 2FA).
 
 **Clave de cifrado:** Genera `TOTP_ENCRYPTION_KEY` con `openssl rand -base64 32` (32 bytes aleatorios). Documentada en `.env.example`; nunca la subas al repositorio.
+
+---
+
+## 12. IP del cliente y proxies de confianza
+
+**Archivo:** `src/lib/ip-cliente.ts`
+
+**¿Qué es?** Un helper único que decide qué IP registrar en la bitácora y usar
+en rate limiting, tanto en Route Handlers como en Server Actions (`headers()`).
+
+**¿Qué ataque evita?**
+- **Spoofing de X-Forwarded-For (CWE-290):** Si la app confía ciegamente en el
+  primer valor del encabezado, un atacante puede evadir límites por IP o falsificar
+  la bitácora.
+
+**Comportamiento:**
+- **Sin proxy de confianza** (`BASTION_TRUSTED_PROXY` omitido o `0`): se ignora
+  `X-Forwarded-For` y `X-Real-IP`. La llave es la constante `directo` (todos los
+  clientes directos comparten bucket en local; es preferible a aceptar IPs falsas).
+- **Con proxy de confianza** (`BASTION_TRUSTED_PROXY=N`): se interpreta
+  `X-Forwarded-For` tomando la entrada del cliente según N saltos de proxy, o
+  `X-Real-IP` si el proxy solo envía ese encabezado.
+
+**Configuración:** Ver comentarios en `.env.example`.
+
+**Prueba unitaria:** `src/lib/ip-cliente.test.ts` verifica que un
+`X-Forwarded-For` inventado no cambia la llave cuando no hay proxy de confianza.
 
 ---
 
@@ -324,6 +366,8 @@ seguridad: registros, logins, fallos, bloqueos, cambios de contraseña, etc.
 | `src/lib/argon2.ts` | Hash y verificación Argon2id |
 | `src/lib/hibp.ts` | Verificación HIBP k-anonymity |
 | `src/lib/limite-intentos.ts` | Rate limiting en PostgreSQL |
+| `src/lib/ip-cliente.ts` | IP del cliente sin spoofing de XFF |
+| `src/lib/tiempo-respuesta-constante.ts` | Piso de latencia anti timing attacks |
 | `src/lib/tokens.ts` | Tokens seguros de un solo uso |
 | `src/lib/correo.ts` | Adaptador de correo (consola) |
 | `src/lib/bitacora-seguridad.ts` | Bitácora de eventos |
