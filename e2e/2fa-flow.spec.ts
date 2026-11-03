@@ -36,7 +36,7 @@ test.describe("Verificación en dos pasos (TOTP)", () => {
     await page.getByLabel("Código de confirmación (6 dígitos)").fill(token);
     await page.getByRole("button", { name: "Confirmar activación" }).click();
     await expect(page.getByText("Estado: activa")).toBeVisible();
-    await expect(page.getByText("Códigos de respaldo")).toBeVisible();
+    await expect(page.getByText("Códigos de respaldo (guárdalos ahora)")).toBeVisible();
 
     await page.goto("/panel");
     await page.getByRole("button", { name: "Salir" }).click();
